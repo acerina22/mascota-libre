@@ -183,3 +183,19 @@ legend{font-size:13px;font-weight:600;padding:0 4px}
   .tile:nth-child(odd){transform:translateY(6px)}
 }
 @media (max-width:420px){.collage{grid-template-columns:repeat(4,1fr)}.tile.t4,.tile.t5{display:none}}
+
+/* contador de solicitudes y encabezado compacto en celular */
+.badge{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font:700 12px var(--body);font-variant-numeric:tabular-nums;margin-left:4px;vertical-align:1px}
+.sm-only{display:none}
+@media (max-width:760px){
+  .nav{gap:6px 10px;padding-block:8px 0;flex-wrap:wrap}
+  .logo{width:30px;height:30px}.logo svg{width:18px;height:18px}
+  .wordmark{font-size:19px}
+  .nav-actions{gap:6px}
+  .nav-actions .btn{padding:7px 12px;font-size:13px}
+  .avatar{width:32px;height:32px;font-size:13px}
+  .lg-only{display:none}.sm-only{display:inline}
+  .links{order:3;width:100%;gap:2px;margin-inline:-6px;padding-bottom:6px}
+  .links a{font-size:14px;padding:5px 10px;white-space:nowrap}
+  main{padding-block:16px 48px}
+}

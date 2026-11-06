@@ -112,7 +112,22 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     av.hidden = !logged;
     if (logged) av.textContent = initials(me?.display_name || session.user.email);
     document.querySelectorAll("[data-auth]").forEach((el) => (el.hidden = !logged));
+    loadBadge();
   }
+  // Solicitudes nuevas sobre mis mascotas (contador en "Mi panel")
+  let lastBadge = -1;
+  async function loadBadge() {
+    const b = $("#nav-badge");
+    if (!session) { b.hidden = true; lastBadge = -1; return; }
+    const { count } = await sb.from("adoption_requests").select("id", { count: "exact", head: true })
+      .eq("status", "pendiente").neq("adopter_id", session.user.id);
+    const n = count || 0;
+    b.textContent = n; b.hidden = !n;
+    b.setAttribute("aria-label", n + (n === 1 ? " solicitud nueva" : " solicitudes nuevas"));
+    if (n > 0 && lastBadge === -1) toast(n === 1 ? "Tenés 1 solicitud de adopción para responder" : `Tenés ${n} solicitudes de adopción para responder`);
+    lastBadge = n;
+  }
+  setInterval(() => { if (session && document.visibilityState === "visible") loadBadge(); }, 60000);
   function requireLogin(next) {
     if (session) return true;
     sessionStorage.setItem("ml_next", next || location.hash);
@@ -254,7 +269,7 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
 
   // ─────────────── Ficha de mascota ───────────────
   async function viewPet(id) {
-    const { data: p } = await sb.from("pets").select("*, owner:profiles(id, display_name, city, is_shelter, shelter_name)").eq("id", id).maybeSingle();
+    const { data: p } = await sb.from("pets").select("*, owner:profiles(id, display_name, city, is_shelter, shelter_name, phone)").eq("id", id).maybeSingle();
     if (!p) { view.innerHTML = `<div class="empty"><h2>Esta publicación ya no está</h2><p>Puede que la hayan borrado.</p><a class="btn" href="#/">Ver otras mascotas</a></div>`; return; }
     const isOwner = session && session.user.id === p.owner_id;
     const ownerName = p.owner?.is_shelter && p.owner?.shelter_name ? p.owner.shelter_name : (p.owner?.display_name || "Usuario");
@@ -277,7 +292,8 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
       action = `<div class="card-box"><h3>¡${esc(p.name)} ya encontró casa!</h3><p class="lead">Mirá otras mascotas que todavía esperan.</p><div class="actions" style="margin-top:12px"><a class="btn" href="#/">Ver mascotas</a></div></div>`;
     } else if (myReq) {
       action = `<div class="card-box"><h3>Ya mandaste tu solicitud</h3><p style="margin:8px 0">${reqChip[myReq.status]}</p>
-        <p class="lead">${myReq.status === "aceptada" ? "¡Quien publicó aceptó tu solicitud! Se va a comunicar al contacto que dejaste." : myReq.status === "rechazada" ? "Esta vez no avanzó. Hay muchas otras mascotas esperando." : "Cuando quien publicó la lea, te va a contactar."}</p></div>`;
+        <p class="lead">${myReq.status === "aceptada" ? "¡Quien publicó aceptó tu solicitud! Se va a comunicar al contacto que dejaste." : myReq.status === "rechazada" ? "Esta vez no avanzó. Hay muchas otras mascotas esperando." : "Cuando quien publicó la lea, te va a contactar."}</p>
+        ${myReq.status === "pendiente" && waLink(p.owner?.phone) ? `<a class="btn ghost" style="margin-top:12px" target="_blank" rel="noopener" href="${waLink(p.owner.phone)}?text=${encodeURIComponent(`Hola! Te mandé una solicitud en Mascota Libre para adoptar a ${p.name}. ${location.origin}${location.pathname}#/mascota/${p.id}`)}">Avisarle por WhatsApp</a>` : ""}</div>`;
     } else {
       action = `<form class="card-box" id="req-form" novalidate><h3>Quiero adoptar a ${esc(p.name)}</h3>
         <p class="lead" style="margin-bottom:14px">Contale a quien lo publicó sobre vos y tu casa. Tu contacto solo lo ve esa persona.</p>
@@ -380,6 +396,7 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     const v = (k, d = "") => esc(p ? p[k] : d);
     view.innerHTML = `<div class="section-head"><div><h1>${p ? "Editar a " + esc(p.name) : "Dar en adopción"}</h1>
       <p class="lead">Una buena foto es lo que más ayuda: de cerca, con luz natural y a la altura de sus ojos.</p></div></div>
+      ${!p && !me?.phone ? `<p class="notice" style="margin-bottom:16px">Sumá tu WhatsApp en <a href="#/perfil">tu perfil</a> para que te avisen apenas manden una solicitud.</p>` : ""}
       <form id="pet-form" class="card-box" novalidate><div class="form-grid">
         <label class="field full">Foto <span class="hint">JPG o PNG. La achicamos automáticamente.</span>
           <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
@@ -504,6 +521,7 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
           if (!error) toast("¡Qué lindo! Marcado como adoptado");
         }
         if (error) { b.disabled = false; return toast("No se pudo guardar el cambio"); }
+        loadBadge();
         viewPanel();
       });
     } else {
@@ -566,7 +584,7 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
       <form id="prof" class="card-box" novalidate><div class="form-grid">
         <label class="field">Tu nombre<input id="u-name" maxlength="80" value="${esc(u.display_name || "")}"></label>
         <label class="field">Ciudad o barrio<input id="u-city" maxlength="80" value="${esc(u.city || "")}"></label>
-        <label class="field full">WhatsApp o teléfono <span class="hint">Si sos refugio o tránsito, se muestra en el directorio para que te contacten.</span><input id="u-phone" maxlength="30" inputmode="tel" value="${esc(u.phone || "")}"></label>
+        <label class="field full">WhatsApp o teléfono <span class="hint">Es visible para los demás: sirve para que quienes quieran adoptar te avisen por WhatsApp y, si sos refugio o tránsito, para que te contacten.</span><input id="u-phone" maxlength="30" inputmode="tel" value="${esc(u.phone || "")}"></label>
         <fieldset class="full"><legend>Cómo querés participar</legend>
           <label class="check"><input type="checkbox" checked disabled> Adoptar y dar en adopción</label>
           <label class="check"><input id="u-shelter" type="checkbox" ${u.is_shelter ? "checked" : ""}> Soy refugio o rescatista</label>
