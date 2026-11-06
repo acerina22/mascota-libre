@@ -245,3 +245,9 @@ legend{font-size:13px;font-weight:600;padding:0 4px}
 .banner .stat:hover{background:rgb(255 255 255 / .14)}
 .banner .stat b{font:800 30px/1.05 var(--display)}
 @media (max-width:760px){.banner .actions .btn{flex:1 1 auto}}
+
+/* collage: mascotas reales tocables con su nombre */
+.tile{position:relative;text-decoration:none}
+.tile.real{outline:3px solid #FF6F9C;outline-offset:-3px}
+.tile .tag{position:absolute;left:6px;right:6px;bottom:6px;background:rgb(20 12 34 / .78);color:#fff;font:700 12px var(--body);text-align:center;padding:3px 6px;border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:760px){.tile .tag{font-size:10px;padding:2px 4px;left:3px;right:3px;bottom:3px}}

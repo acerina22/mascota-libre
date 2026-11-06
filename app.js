@@ -185,13 +185,13 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     view.innerHTML = `
       <section class="banner">
         <div class="banner-copy">
-          <span class="kicker">Adopción responsable · gratis</span>
-          <h1>Perros y gatos que <span class="hl">buscan casa</span></h1>
-          <p class="lead">Publica quien sea: un refugio, un rescatista o un vecino. Elegí, mandá tu solicitud y coordiná directo con quien lo cuida.</p>
+          <span class="kicker">Red de adopción gratuita</span>
+          <h1>No compres, <span class="hl">adoptá</span></h1>
+          <p class="lead">Perros y gatos que buscan casa, publicados por refugios, rescatistas y vecinos. Sumate a la red: adoptá, da en adopción u ofrecete como tránsito.</p>
           <div class="actions"><a class="btn" href="#resultados" id="go-results">Quiero adoptar</a><a class="btn ghost on-dark" href="#/publicar">Dar en adopción</a></div>
           <div class="stats" id="stats"></div>
         </div>
-        <div class="collage" id="collage" aria-hidden="true">${collageTiles([])}</div>
+        <div class="collage" id="collage">${collageTiles([])}</div>
       </section>
       <div class="filters">
         <div class="seg" role="group" aria-label="Especie">
@@ -221,21 +221,25 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     await loadResults();
   }
   // Banner: fotos fijas (img/banner-*.jpg en config) + caras de mascotas publicadas
-  function collageTiles(srcs) {
+  const PAW = `<svg viewBox="0 0 24 24"><circle cx="6" cy="9" r="2.2"/><circle cx="10" cy="5.5" r="2.2"/><circle cx="14" cy="5.5" r="2.2"/><circle cx="18" cy="9" r="2.2"/><path d="M12 11c-3.2 0-6 3.6-6 6.2 0 1.6 1.2 2.3 2.6 2.3 1.3 0 2.2-.7 3.4-.7s2.1.7 3.4.7c1.4 0 2.6-.7 2.6-2.3 0-2.6-2.8-6.2-6-6.2z"/></svg>`;
+  // items: {src, id?, name?}. Mascotas reales en adopción primero; si faltan, caritas de muestra.
+  function collageTiles(items) {
     const fill = ["perro", "gato", "perro", "gato", "perro", "gato"];
-    return fill.map((sp, i) => srcs[i]
-      ? `<div class="tile t${i}"><img src="${esc(srcs[i])}" alt="" loading="${i < 2 ? "eager" : "lazy"}"></div>`
-      : `<div class="tile t${i} ph-${sp}"><svg viewBox="0 0 24 24"><circle cx="6" cy="9" r="2.2"/><circle cx="10" cy="5.5" r="2.2"/><circle cx="14" cy="5.5" r="2.2"/><circle cx="18" cy="9" r="2.2"/><path d="M12 11c-3.2 0-6 3.6-6 6.2 0 1.6 1.2 2.3 2.6 2.3 1.3 0 2.2-.7 3.4-.7s2.1.7 3.4.7c1.4 0 2.6-.7 2.6-2.3 0-2.6-2.8-6.2-6-6.2z"/></svg></div>`).join("");
+    return fill.map((sp, i) => {
+      const it = items[i];
+      if (!it) return `<div class="tile t${i} ph-${sp}">${PAW}</div>`;
+      const img = `<img src="${esc(it.src)}" alt="${it.name ? "Foto de " + esc(it.name) : ""}" loading="${i < 2 ? "eager" : "lazy"}">`;
+      return it.id
+        ? `<a class="tile t${i} real" href="#/mascota/${it.id}">${img}<span class="tag">${esc(it.name)}</span></a>`
+        : `<div class="tile t${i}">${img}</div>`;
+    }).join("");
   }
   async function loadCollage() {
-    const fixed = (CFG.BANNER_IMAGES || []).slice(0, 6);
-    let srcs = fixed;
-    if (fixed.length < 6) {
-      const { data } = await sb.from("pets").select("photo_thumb").neq("photo_thumb", "").neq("status", "adoptado").order("created_at", { ascending: false }).limit(6 - fixed.length);
-      srcs = fixed.concat((data || []).map((r) => r.photo_thumb));
-    }
+    const { data } = await sb.from("pets").select("id, name, photo_thumb").neq("photo_thumb", "").neq("status", "adoptado").order("created_at", { ascending: false }).limit(6);
+    const items = (data || []).map((r) => ({ id: r.id, name: r.name, src: r.photo_thumb }));
+    (CFG.BANNER_IMAGES || []).forEach((src) => { if (items.length < 6) items.push({ src }); });
     const el = $("#collage");
-    if (el && srcs.length) el.innerHTML = collageTiles(srcs);
+    if (el && items.length) el.innerHTML = collageTiles(items);
   }
   async function loadStats() {
     const [a, b] = await Promise.all([
