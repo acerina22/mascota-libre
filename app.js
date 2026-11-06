@@ -1,5 +1,5 @@
 /* Mascota Libre — app de adopciones (JS + Neon Auth/Data API + Cloudinary) */
-import { createClient } from "https://esm.sh/@neon/neon-js/supabase";
+import { createClient } from "https://esm.sh/@neon/neon-js";
 
 (function () {
   "use strict";
@@ -563,7 +563,7 @@ import { createClient } from "https://esm.sh/@neon/neon-js/supabase";
     $("#u-fsp").value = u.foster_species || "ambos";
     $("#u-shelter").addEventListener("change", (e) => ($("#shelter-box").hidden = !e.target.checked));
     $("#u-foster").addEventListener("change", (e) => ($("#foster-box").hidden = !e.target.checked));
-    $("#logout").addEventListener("click", async () => { await sb.auth.signOut(); toast("Sesión cerrada"); location.hash = "#/"; });
+    $("#logout").addEventListener("click", async () => { try { await sb.auth.signOut(); } catch {} await refreshSession(); toast("Sesión cerrada"); location.hash = "#/"; });
     $("#prof").addEventListener("submit", async (e) => {
       e.preventDefault();
       const row = {
@@ -608,7 +608,7 @@ import { createClient } from "https://esm.sh/@neon/neon-js/supabase";
       const email = $("#a-email").value.trim();
       if (!email) return ($("#a-err").textContent = "Escribí tu email y tocá de nuevo.");
       let error = null;
-      try { ({ error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })); } catch (ex) { error = ex; }
+      try { ({ error } = await sb.auth.requestPasswordReset({ email, redirectTo: location.origin + location.pathname })); } catch (ex) { error = ex; }
       $("#a-err").textContent = error ? "No se pudo enviar el email. Probá más tarde." : "";
       if (!error) toast("Te mandamos un email para cambiar la contraseña");
     });
@@ -619,42 +619,48 @@ import { createClient } from "https://esm.sh/@neon/neon-js/supabase";
       if (!email.includes("@")) return (errEl.textContent = "Revisá el email.");
       if (pass.length < 6) return (errEl.textContent = "La contraseña tiene que tener al menos 6 caracteres.");
       const btn = e.target.querySelector("button[type=submit]"); btn.disabled = true;
-      if (authMode === "registro") {
-        const name = $("#a-name").value.trim();
-        if (!name) { btn.disabled = false; return (errEl.textContent = "Poné tu nombre."); }
-        const { data, error } = await sb.auth.signUp({ email, password: pass, options: { data: { name, display_name: name } } });
-        btn.disabled = false;
-        if (error) return (errEl.textContent = /registered/i.test(error.message) ? "Ese email ya tiene cuenta. Ingresá." : "No se pudo crear la cuenta. Probá de nuevo en unos minutos.");
-        if (!data.session) {
-          view.innerHTML = `<div class="auth-box card-box"><h2>Revisá tu email</h2><p class="lead">Te mandamos un link a <b>${esc(email)}</b> para confirmar la cuenta. Después volvé y ingresá.</p></div>`;
-          authMode = "login";
+      const why = (err) => (err && (err.message || err.statusText || err.code)) ? " (" + (err.message || err.statusText || err.code) + ")" : "";
+      try {
+        if (authMode === "registro") {
+          const name = $("#a-name").value.trim();
+          if (!name) { btn.disabled = false; return (errEl.textContent = "Poné tu nombre."); }
+          const { error } = await sb.auth.signUp.email({ email, password: pass, name });
+          if (error) {
+            btn.disabled = false;
+            return (errEl.textContent = /exist|already|registered/i.test(error.message || error.code || "") ? "Ese email ya tiene cuenta. Ingresá." : "No se pudo crear la cuenta" + why(error) + ".");
+          }
+        } else {
+          const { error } = await sb.auth.signIn.email({ email, password: pass });
+          if (error) {
+            btn.disabled = false;
+            return (errEl.textContent = /invalid|password|credential/i.test(error.message || error.code || "") ? "Email o contraseña incorrectos." : "No se pudo ingresar" + why(error) + ".");
+          }
         }
-      } else {
-        const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+      } catch (ex) {
         btn.disabled = false;
-        if (error) errEl.textContent = /confirm/i.test(error.message) ? "Todavía no confirmaste tu email. Buscá el link en tu correo." : "Email o contraseña incorrectos.";
+        return (errEl.textContent = "No se pudo conectar" + why(ex) + ".");
       }
-    });
-  }
-
-  // ─────────────── arranque ───────────────
-  sb.auth.onAuthStateChange(async (evt, s) => {
-    const was = !!session;
-    session = s;
-    if (evt === "INITIAL_SESSION") return;
-    await loadMe();
-    if (!was && s && location.hash === "#/ingresar") {
+      btn.disabled = false;
+      await refreshSession();
+      if (!session) return (errEl.textContent = "Se creó la sesión pero no se pudo leer. Recargá la página.");
       const next = sessionStorage.getItem("ml_next") || "#/";
       sessionStorage.removeItem("ml_next");
       toast("¡Hola" + (me?.display_name ? ", " + me.display_name : "") + "!");
       location.hash = next;
-    } else if (was !== !!s) route();
-  });
+    });
+  }
+
+  // ─────────────── arranque ───────────────
+  async function refreshSession() {
+    try {
+      const { data } = await sb.auth.getSession();
+      session = data?.session && data?.user ? { ...data.session, user: data.user } : null;
+    } catch { session = null; }
+    await loadMe();
+  }
   (async function start() {
     window.__mlStarted = true;
-    const { data } = await sb.auth.getSession();
-    session = data.session;
-    await loadMe();
+    await refreshSession();
     window.addEventListener("hashchange", route);
     route();
   })();
