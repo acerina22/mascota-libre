@@ -45,5 +45,13 @@
 
 <script src="config.js"></script>
 <script type="module" src="app.js"></script>
+<script>
+  // Si la app no arranca (por ejemplo, no cargó la librería de Neon), avisar en vez de quedar en blanco
+  setTimeout(function () {
+    if (!window.__mlStarted) {
+      document.getElementById("view").innerHTML = '<div class="empty"><h2>No se pudo cargar la app</h2><p>Revisá tu conexión y recargá la página. Si sigue pasando, avisanos.</p></div>';
+    }
+  }, 12000);
+</script>
 </body>
 </html>

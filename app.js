@@ -651,6 +651,7 @@ import { createClient } from "https://esm.sh/@neon/neon-js/supabase";
     } else if (was !== !!s) route();
   });
   (async function start() {
+    window.__mlStarted = true;
     const { data } = await sb.auth.getSession();
     session = data.session;
     await loadMe();
