@@ -208,3 +208,27 @@ legend{font-size:13px;font-weight:600;padding:0 4px}
   -webkit-mask-image:linear-gradient(90deg,rgb(0 0 0 / .35),#000 30%,#000 70%,rgb(0 0 0 / .35));mask-image:linear-gradient(90deg,rgb(0 0 0 / .35),#000 30%,#000 70%,rgb(0 0 0 / .35))}
 @media (prefers-reduced-motion:no-preference){.site::before{animation:caritas 60s linear infinite}@keyframes caritas{to{background-position:150px 150px}}}
 @media (max-width:760px){.site::before{background-size:120px 120px}}
+
+/* fotos reales de cachorros y gatitos en transparencia detrás del encabezado */
+.site::before{display:none}
+.faces{position:absolute;inset:0;z-index:-1;overflow:hidden;pointer-events:none;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)}
+.faces img{position:absolute;width:86px;height:86px;border-radius:50%;object-fit:cover;opacity:.26;filter:saturate(1.1)}
+@media (prefers-color-scheme:dark){.faces img{opacity:.2}}
+.faces img:nth-child(1){left:2%;top:-14px}
+.faces img:nth-child(2){left:11%;top:30px;width:70px;height:70px}
+.faces img:nth-child(3){left:21%;top:-8px;width:96px;height:96px}
+.faces img:nth-child(4){left:32%;top:24px}
+.faces img:nth-child(5){left:42%;top:-18px;width:74px;height:74px}
+.faces img:nth-child(6){left:52%;top:20px;width:92px;height:92px}
+.faces img:nth-child(7){left:63%;top:-10px;width:72px;height:72px}
+.faces img:nth-child(8){left:72%;top:26px}
+.faces img:nth-child(9){left:82%;top:-16px;width:94px;height:94px}
+.faces img:nth-child(10){left:91%;top:22px;width:70px;height:70px}
+@media (max-width:760px){
+  .faces img{width:60px!important;height:60px!important}
+  .faces img:nth-child(odd){top:-8px}.faces img:nth-child(even){top:40px}
+  .faces img:nth-child(n+8){display:none}
+  .faces img:nth-child(1){left:0}.faces img:nth-child(2){left:13%}.faces img:nth-child(3){left:27%}
+  .faces img:nth-child(4){left:41%}.faces img:nth-child(5){left:55%}.faces img:nth-child(6){left:69%}.faces img:nth-child(7){left:83%}
+}
