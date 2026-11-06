@@ -185,7 +185,7 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     view.innerHTML = `
       <section class="banner">
         <div class="banner-copy">
-          <span class="kicker">Red de adopción gratuita</span>
+          <span class="kicker">Red de adopción responsable y gratuita</span>
           <h1>No compres, <span class="hl">adoptá</span></h1>
           <p class="lead">Perros y gatos que buscan casa, publicados por refugios, rescatistas y vecinos. Sumate a la red: adoptá, da en adopción u ofrecete como tránsito.</p>
           <div class="actions"><a class="btn" href="#resultados" id="go-results">Quiero adoptar</a><a class="btn ghost on-dark" href="#/publicar">Dar en adopción</a></div>
