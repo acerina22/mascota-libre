@@ -275,3 +275,33 @@ legend{font-size:13px;font-weight:600;padding:0 4px}
 @media (max-width:560px){.form-grid{grid-template-columns:minmax(0,1fr)}}
 .form-grid > .seg{width:auto!important;max-width:100%}
 .form-grid > .seg button{flex:1 1 0;white-space:normal;line-height:1.2}
+
+/* calificaciones */
+.stars{color:#E8A317;font-weight:700;font-size:13px;white-space:nowrap;letter-spacing:.02em}
+.stars small{color:var(--muted);font-weight:500}
+.stars.none{color:var(--muted);font-weight:500}
+.star-pick{display:flex;gap:4px;margin:6px 0 8px}
+.star-pick button{border:0;background:none;font-size:30px;line-height:1;color:#E8A317;cursor:pointer;padding:2px}
+.reviews{display:flex;flex-direction:column;gap:12px}
+.review{border-top:1px solid var(--line);padding-top:10px}
+.review p{margin:4px 0 0;overflow-wrap:anywhere}
+/* ficha de adoptante */
+.ficha-cta{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.ficha summary{cursor:pointer;font-weight:700;color:var(--accent);font-size:14px}
+.ficha dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px;margin:10px 0 0}
+.ficha dl .full{grid-column:1/-1}
+.ficha dt{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700}
+.ficha dd{margin:1px 0 0;font-size:14px;overflow-wrap:anywhere}
+@media (max-width:340px){.ficha dl{grid-template-columns:minmax(0,1fr)}}
+.form-grid h3{margin-top:6px}
+/* seguimiento */
+.after{margin-top:12px;padding:12px;border-radius:12px;background:var(--bg);display:flex;flex-direction:column;gap:10px}
+.after h4{margin:0;font:700 15px var(--display)}
+.fu-item{display:flex;gap:10px;align-items:flex-start}
+.fu-item img{width:64px;height:80px;object-fit:cover;border-radius:8px;flex:none}
+.fu-item p{margin:2px 0 0;overflow-wrap:anywhere}
+.fu-form,.rate-form{display:flex;flex-direction:column;gap:8px}
+.fu-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.fu-row [type=submit]{margin-left:auto}
+.fu-ok{font-size:13px;color:var(--ok)}
+.rated{margin:0;font-size:14px}

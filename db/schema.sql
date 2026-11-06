@@ -118,3 +118,13 @@ create policy photos_update on public.pet_photos for update to authenticated
   with check (exists (select 1 from public.pets p where p.id = pet_id and p.owner_id = (select auth.user_id())));
 create policy photos_delete on public.pet_photos for delete to authenticated
   using (exists (select 1 from public.pets p where p.id = pet_id and p.owner_id = (select auth.user_id())));
+
+-- ─────────── Perdidos y encontrados, rescatistas, ficha de adoptante, seguimiento y calificaciones ───────────
+-- (aplicado en Neon; resumen)
+-- lost_found / lost_found_photos: avisos "se perdió" / "encontrado", lectura pública, cada uno edita lo suyo.
+-- profiles.is_rescuer: rol de rescatista.
+-- adopter_profiles: ficha de adoptante responsable (los 4 compromisos obligatorios). La ve la propia persona
+--   y quien publicó una mascota a la que esa persona le pidió adoptar.
+-- adoption_followups: novedades post-adopción de una solicitud aceptada; las ven y escriben adoptante y quien publicó.
+-- user_ratings + vista rating_summary: 1 a 5 estrellas, solo entre las dos partes de una solicitud aceptada,
+--   una calificación por persona por adopción. Lectura pública.

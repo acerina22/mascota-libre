@@ -99,7 +99,9 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
       if (!me) {
         // primera vez: crear el perfil
         const display_name = (session.user.user_metadata?.display_name || session.user.user_metadata?.name || session.user.name || (session.user.email || "").split("@")[0]).slice(0, 80);
-        const ins = await sb.from("profiles").insert({ id: session.user.id, display_name }).select("*").single();
+        let roles = []; try { roles = JSON.parse(sessionStorage.getItem("ml_roles") || "[]"); } catch {}
+        sessionStorage.removeItem("ml_roles");
+        const ins = await sb.from("profiles").insert({ id: session.user.id, display_name, is_shelter: roles.includes("refugio"), is_rescuer: roles.includes("rescatista"), is_foster: roles.includes("transito") }).select("*").single();
         me = ins.data;
       }
     }
@@ -147,6 +149,8 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     [/^#\/perfil$/, viewProfile, ""],
     [/^#\/ingresar$/, viewAuth, ""],
     [/^#\/perdidos$/, viewLost, "perdidos"],
+    [/^#\/adoptante$/, viewAdopterForm, ""],
+    [/^#\/usuario\/([\w-]+)$/, viewUser, ""],
     [/^#\/perdidos\/nuevo$/, viewLostForm, "perdidos"],
     [/^#\/aviso\/([\w-]+)$/, viewLostItem, "perdidos"],
   ];
@@ -284,14 +288,16 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
 
   // ─────────────── Ficha de mascota ───────────────
   async function viewPet(id) {
-    const { data: p } = await sb.from("pets").select("*, owner:profiles(id, display_name, city, is_shelter, shelter_name, phone)").eq("id", id).maybeSingle();
+    const { data: p } = await sb.from("pets").select("*, owner:profiles(id, display_name, city, is_shelter, is_rescuer, shelter_name, phone)").eq("id", id).maybeSingle();
     if (!p) { view.innerHTML = `<div class="empty"><h2>Esta publicación ya no está</h2><p>Puede que la hayan borrado.</p><a class="btn" href="#/">Ver otras mascotas</a></div>`; return; }
     const isOwner = session && session.user.id === p.owner_id;
     const ownerName = p.owner?.is_shelter && p.owner?.shelter_name ? p.owner.shelter_name : (p.owner?.display_name || "Usuario");
-    let myReq = null;
+    let myReq = null, hasFicha = false;
+    const ownerRate = (await ratingsFor([p.owner_id]))[p.owner_id];
     if (session && !isOwner) {
       const r = await sb.from("adoption_requests").select("*").eq("pet_id", id).eq("adopter_id", session.user.id).maybeSingle();
       myReq = r.data;
+      if (!myReq) hasFicha = !!(await sb.from("adopter_profiles").select("id").eq("id", session.user.id).maybeSingle()).data;
     }
     const ph = await sb.from("pet_photos").select("data").eq("pet_id", id).maybeSingle();
     const full = ph.data?.data || p.photo_thumb || "";
@@ -309,9 +315,13 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
       action = `<div class="card-box"><h3>Ya mandaste tu solicitud</h3><p style="margin:8px 0">${reqChip[myReq.status]}</p>
         <p class="lead">${myReq.status === "aceptada" ? "¡Quien publicó aceptó tu solicitud! Se va a comunicar al contacto que dejaste." : myReq.status === "rechazada" ? "Esta vez no avanzó. Hay muchas otras mascotas esperando." : "Cuando quien publicó la lea, te va a contactar."}</p>
         ${myReq.status === "pendiente" && waLink(p.owner?.phone) ? `<a class="btn ghost" style="margin-top:12px" target="_blank" rel="noopener" href="${waLink(p.owner.phone)}?text=${encodeURIComponent(`Hola! Te mandé una solicitud en Mascota Libre para adoptar a ${p.name}. ${location.origin}${location.pathname}#/mascota/${p.id}`)}">Avisarle por WhatsApp</a>` : ""}</div>`;
+    } else if (session && !hasFicha) {
+      action = `<div class="card-box"><h3>Quiero adoptar a ${esc(p.name)}</h3>
+        <p class="lead" style="margin:6px 0 14px">Para pedir una adopción, primero completá tu <b>ficha de adoptante responsable</b>. Te lleva 2 minutos y la completás una sola vez.</p>
+        <a class="btn block" href="#/adoptante" id="go-ficha">Completar mi ficha</a></div>`;
     } else {
       action = `<form class="card-box" id="req-form" novalidate><h3>Quiero adoptar a ${esc(p.name)}</h3>
-        <p class="lead" style="margin-bottom:14px">Contale a quien lo publicó sobre vos y tu casa. Tu contacto solo lo ve esa persona.</p>
+        <p class="lead" style="margin-bottom:14px">Contale a quien lo publicó por qué querés adoptarlo. ${session ? "Tu ficha de adoptante va junto con la solicitud; solo la ve esa persona." : "Para adoptar necesitás una cuenta y tu ficha de adoptante."}</p>
         <div class="form-grid">
           <label class="field full">Mensaje<textarea id="r-msg" rows="4" maxlength="1000" placeholder="Dónde vivís, si tenés patio o balcón con red, otros animales, chicos, horarios…"></textarea></label>
           <label class="field full">WhatsApp o email para contactarte<input id="r-contact" maxlength="60" value="${esc(me?.phone || "")}"></label>
@@ -337,13 +347,14 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
           <div class="health">${health}</div>
           ${p.description ? `<p class="desc">${esc(p.description)}</p>` : ""}
           <div class="who"><span class="avatar" aria-hidden="true">${esc(initials(ownerName))}</span>
-            <div><b>${esc(ownerName)}</b>${p.owner?.is_shelter ? ' <span class="chip plain">Refugio</span>' : ""}<div class="loc" style="color:var(--muted);font-size:13px">📍 ${esc(p.city)} · publicado ${ago(p.created_at)}</div></div></div>
+            <div><a href="#/usuario/${p.owner_id}" style="text-decoration:none"><b>${esc(ownerName)}</b></a>${p.owner?.is_shelter ? ' <span class="chip plain">Refugio</span>' : p.owner?.is_rescuer ? ' <span class="chip plain">Rescatista</span>' : ""} ${starsHtml(ownerRate)}<div class="loc" style="color:var(--muted);font-size:13px">📍 ${esc(p.city)} · publicado ${ago(p.created_at)}</div></div></div>
           ${action}
           <button class="btn ghost" id="dl-flyer" type="button">Descargar flyer para compartir</button>
         </div>
       </div>`;
 
     $("#dl-flyer").addEventListener("click", () => makeFlyer(p, full));
+    $("#go-ficha")?.addEventListener("click", () => sessionStorage.setItem("ml_next", "#/mascota/" + id));
     const form = $("#req-form");
     if (form) form.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -670,6 +681,167 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     });
   }
 
+  // ─────────────── Calificaciones ───────────────
+  async function ratingsFor(ids) {
+    const out = {}; if (!ids.length) return out;
+    const { data } = await sb.from("rating_summary").select("*").in("rated_id", ids);
+    (data || []).forEach((r) => (out[r.rated_id] = { avg: Number(r.avg_stars), total: r.total }));
+    return out;
+  }
+  const starsHtml = (r) => r && r.total
+    ? `<span class="stars" title="${r.avg} de 5 en ${r.total} calificaci${r.total === 1 ? "ón" : "ones"}">★ ${r.avg.toFixed(1)} <small>(${r.total})</small></span>`
+    : `<span class="stars none">Sin calificaciones</span>`;
+  const starRow = (n) => "★★★★★".slice(0, n) + "☆☆☆☆☆".slice(0, 5 - n);
+
+  // ─────────────── Después de la adopción: seguimiento y calificación ───────────────
+  async function afterAdoption(reqIds) {
+    if (!reqIds.length) return { fu: {}, mine: {} };
+    const [f, m] = await Promise.all([
+      sb.from("adoption_followups").select("*").in("request_id", reqIds).order("created_at", { ascending: true }),
+      sb.from("user_ratings").select("*").in("request_id", reqIds).eq("rater_id", session.user.id),
+    ]);
+    const fu = {}; (f.data || []).forEach((x) => (fu[x.request_id] = fu[x.request_id] || []).push(x));
+    const mine = {}; (m.data || []).forEach((x) => (mine[x.request_id] = x));
+    return { fu, mine };
+  }
+  function afterHtml(r, extra, otherId, otherName, iAmOwner) {
+    const list = extra.fu[r.id] || [];
+    const rated = extra.mine[r.id];
+    const items = list.length ? list.map((x) => `<div class="fu-item">${x.photo ? `<img src="${esc(x.photo)}" alt="">` : ""}<div><div class="s" style="color:var(--muted);font-size:12px">${x.author_id === session.user.id ? "Vos" : iAmOwner ? "Quien adoptó" : "Quien la dio en adopción"} · ${ago(x.created_at)}</div><p>${esc(x.note)}</p></div></div>`).join("")
+      : `<p class="s" style="color:var(--muted);font-size:13px;margin:0">${iAmOwner ? "Todavía no hay novedades. Quien adoptó puede contar cómo está." : "Contá cómo está: a la semana, al mes y a los 3 meses."}</p>`;
+    return `<div class="after">
+      <h4>Seguimiento</h4>${items}
+      <form class="fu-form" data-fu="${r.id}" novalidate><textarea rows="2" maxlength="800" placeholder="${iAmOwner ? "Preguntá cómo está o dejá una nota" : "¿Cómo se adaptó? ¿Ya fue al veterinario?"}"></textarea>
+        <div class="fu-row"><label class="btn ghost small fu-file">📷 Foto<input type="file" accept="image/*" hidden></label><span class="fu-ok" hidden>Foto lista ✓</span><button class="btn small" type="submit">Publicar novedad</button></div></form>
+      ${rated ? `<p class="rated">Calificaste a ${esc(otherName)}: <span class="stars">${starRow(rated.stars)}</span></p>`
+        : `<form class="rate-form" data-rate="${r.id}" data-to="${otherId}" novalidate><h4>Calificá a ${esc(otherName)}</h4>
+          <div class="star-pick" role="radiogroup" aria-label="Estrellas">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-n="${n}" aria-label="${n} estrella${n > 1 ? "s" : ""}">☆</button>`).join("")}</div>
+          <textarea rows="2" maxlength="500" placeholder="Contá cómo fue la experiencia (opcional)"></textarea><button class="btn small" type="submit">Enviar calificación</button></form>`}
+    </div>`;
+  }
+  function wireAfter(root) {
+    root.querySelectorAll(".fu-file input").forEach((inp) => inp.addEventListener("change", async () => {
+      const f = inp.files?.[0]; const form = inp.closest("form"); if (!f) return;
+      try { form._photo = (await makePhotos(f)).thumb; form.querySelector(".fu-ok").hidden = false; } catch { toast("No pudimos leer esa foto"); }
+    }));
+    root.querySelectorAll(".fu-form").forEach((form) => form.addEventListener("submit", async (e) => {
+      e.preventDefault(); const note = form.querySelector("textarea").value.trim();
+      if (!note) return toast("Escribí una novedad");
+      const b = form.querySelector("[type=submit]"); b.disabled = true;
+      const { error } = await sb.from("adoption_followups").insert({ request_id: form.dataset.fu, author_id: session.user.id, note, photo: form._photo || "" });
+      if (error) { b.disabled = false; return toast("No se pudo publicar"); }
+      toast("Novedad publicada"); viewPanel();
+    }));
+    root.querySelectorAll(".rate-form").forEach((form) => {
+      let n = 0; const btns = form.querySelectorAll(".star-pick button");
+      btns.forEach((b) => b.addEventListener("click", () => { n = +b.dataset.n; btns.forEach((x) => { x.textContent = +x.dataset.n <= n ? "★" : "☆"; x.setAttribute("aria-pressed", String(+x.dataset.n <= n)); }); }));
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault(); if (!n) return toast("Elegí de 1 a 5 estrellas");
+        const b = form.querySelector("[type=submit]"); b.disabled = true;
+        const { error } = await sb.from("user_ratings").insert({ request_id: form.dataset.rate, rater_id: session.user.id, rated_id: form.dataset.to, stars: n, comment: form.querySelector("textarea").value.trim() });
+        if (error) { b.disabled = false; return toast("No se pudo enviar la calificación"); }
+        toast("¡Gracias por calificar!"); viewPanel();
+      });
+    });
+  }
+
+  // ─────────────── Ficha de adoptante responsable ───────────────
+  const H = { casa: "Casa", departamento: "Departamento", ph: "PH", otro: "Otro" };
+  const T = { propia: "Propia", alquilada: "Alquilada", familiar: "De un familiar" };
+  const O = { patio: "Patio o jardín", balcon_con_red: "Balcón con red", balcon_sin_red: "Balcón sin red", ninguno: "Sin espacio exterior" };
+  function fichaHtml(f) {
+    if (!f) return `<p class="s" style="color:var(--muted);font-size:13px;margin:0">Esta persona todavía no completó su ficha de adoptante.</p>`;
+    const row = (k, v) => v === "" || v == null ? "" : `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`;
+    return `<details class="ficha"><summary>Ver ficha de adoptante responsable</summary><dl>
+      ${row("Nombre", f.full_name)}${row("Edad", f.age + " años")}${row("Teléfono", f.phone)}${row("Zona", f.zone)}
+      ${row("Vivienda", H[f.housing] + " · " + T[f.tenure] + (f.tenure === "alquilada" ? (f.landlord_ok ? " (el dueño permite mascotas)" : " (sin confirmar permiso)") : ""))}
+      ${row("Espacio", O[f.outdoor])}${row("Convivientes", f.people + (f.kids ? ", con chicos" : "") + (f.all_agree ? " · todos de acuerdo" : " · no todos confirmaron"))}
+      ${row("Otros animales", f.other_pets || "Ninguno")}${row("Horas solo por día", f.hours_alone)}
+      ${row("Experiencia", f.experience)}${row("Por qué quiere adoptar", f.reason)}
+      <div class="full"><dt>Compromisos</dt><dd>✓ Castrar · ✓ Vacunas y veterinario · ✓ Acepta seguimiento · ✓ Si no puede seguir, avisa y no abandona</dd></div></dl></details>`;
+  }
+  async function viewAdopterForm() {
+    if (!requireLogin("#/adoptante")) return;
+    const { data: f0 } = await sb.from("adopter_profiles").select("*").eq("id", session.user.id).maybeSingle();
+    const f = f0 || { full_name: me?.display_name || "", phone: me?.phone || "", zone: me?.city || "", people: 1, hours_alone: 4 };
+    const v = (k) => esc(f[k] ?? "");
+    view.innerHTML = `<div class="section-head"><div><h1>Ficha de adoptante responsable</h1>
+      <p class="lead">Se completa una sola vez y va junto con cada solicitud. La ven solo las personas a quienes les pedís adoptar. Contestá con sinceridad: no hay respuestas "malas", sirve para encontrar la mascota que mejor se adapta a tu casa.</p></div></div>
+      <form id="ad-form" class="card-box" novalidate><div class="form-grid">
+        <h3 class="full">Sobre vos</h3>
+        <label class="field">Nombre y apellido<input id="f-name" maxlength="80" value="${v("full_name")}"></label>
+        <label class="field">Edad<input id="f-age" type="number" min="18" max="110" inputmode="numeric" value="${v("age")}"></label>
+        <label class="field">WhatsApp o teléfono<input id="f-phone" maxlength="30" inputmode="tel" value="${v("phone")}"></label>
+        <label class="field">Barrio y localidad<input id="f-zone" maxlength="100" value="${v("zone")}" placeholder="Ej.: Bernal, Quilmes"></label>
+        <h3 class="full">Tu casa</h3>
+        <label class="field">Tipo de vivienda<select id="f-housing"><option value="casa">Casa</option><option value="departamento">Departamento</option><option value="ph">PH</option><option value="otro">Otro</option></select></label>
+        <label class="field">La vivienda es<select id="f-tenure"><option value="propia">Propia</option><option value="alquilada">Alquilada</option><option value="familiar">De un familiar</option></select></label>
+        <label class="check full" id="f-landlord-w"><input id="f-landlord" type="checkbox" ${f.landlord_ok ? "checked" : ""}> El dueño o el contrato permiten mascotas</label>
+        <label class="field">Espacio exterior<select id="f-outdoor"><option value="patio">Patio o jardín</option><option value="balcon_con_red">Balcón con red</option><option value="balcon_sin_red">Balcón sin red</option><option value="ninguno">No tengo</option></select></label>
+        <label class="field">¿Cuántas personas viven?<input id="f-people" type="number" min="1" max="20" value="${v("people")}"></label>
+        <label class="check"><input id="f-kids" type="checkbox" ${f.kids ? "checked" : ""}> Hay chicos en casa</label>
+        <label class="check"><input id="f-agree" type="checkbox" ${f.all_agree ? "checked" : ""}> Todos en casa están de acuerdo</label>
+        <label class="field full">Otros animales en casa <span class="hint">Cuáles, edad, si están castrados</span><input id="f-pets" maxlength="300" value="${v("other_pets")}"></label>
+        <label class="field">Horas que quedaría solo por día<input id="f-hours" type="number" min="0" max="24" value="${v("hours_alone")}"></label>
+        <h3 class="full">Tu experiencia</h3>
+        <label class="field full">¿Tuviste mascotas antes? ¿Qué pasó con ellas?<textarea id="f-exp" rows="2" maxlength="600">${v("experience")}</textarea></label>
+        <label class="field full">¿Por qué querés adoptar?<textarea id="f-why" rows="2" maxlength="600">${v("reason")}</textarea></label>
+        <fieldset class="full"><legend>Me comprometo a…</legend>
+          <label class="check"><input id="c-neuter" type="checkbox" ${f.commit_neuter ? "checked" : ""}> Castrarlo cuando tenga la edad</label>
+          <label class="check"><input id="c-vet" type="checkbox" ${f.commit_vet ? "checked" : ""}> Mantener sus vacunas y llevarlo al veterinario</label>
+          <label class="check"><input id="c-fu" type="checkbox" ${f.commit_followup ? "checked" : ""}> Aceptar el seguimiento y contar cómo está</label>
+          <label class="check"><input id="c-ret" type="checkbox" ${f.commit_return ? "checked" : ""}> Si no puedo seguir cuidándolo, avisar a quien me lo dio. Nunca abandonarlo</label>
+        </fieldset>
+        <p class="err full" id="f-err" role="alert"></p>
+        <div class="actions full" style="justify-content:flex-end"><button class="btn" type="submit" id="f-save">Guardar ficha</button></div>
+      </div></form>`;
+    $("#f-housing").value = f.housing || "casa"; $("#f-tenure").value = f.tenure || "propia"; $("#f-outdoor").value = f.outdoor || "patio";
+    const paintT = () => ($("#f-landlord-w").hidden = $("#f-tenure").value !== "alquilada"); paintT(); $("#f-tenure").addEventListener("change", paintT);
+    $("#ad-form").addEventListener("submit", async (e) => {
+      e.preventDefault(); const err = $("#f-err"); err.textContent = "";
+      const n = (id) => parseInt($(id).value, 10);
+      const row = { id: session.user.id, full_name: $("#f-name").value.trim(), age: n("#f-age"), phone: $("#f-phone").value.trim(), zone: $("#f-zone").value.trim(),
+        housing: $("#f-housing").value, tenure: $("#f-tenure").value, landlord_ok: $("#f-landlord").checked, outdoor: $("#f-outdoor").value,
+        people: n("#f-people") || 1, kids: $("#f-kids").checked, all_agree: $("#f-agree").checked, other_pets: $("#f-pets").value.trim(),
+        hours_alone: Number.isFinite(n("#f-hours")) ? n("#f-hours") : 0, experience: $("#f-exp").value.trim(), reason: $("#f-why").value.trim(),
+        commit_neuter: $("#c-neuter").checked, commit_vet: $("#c-vet").checked, commit_followup: $("#c-fu").checked, commit_return: $("#c-ret").checked, updated_at: new Date().toISOString() };
+      if (row.full_name.length < 2) return (err.textContent = "Poné tu nombre y apellido.");
+      if (!(row.age >= 18)) return (err.textContent = "Para adoptar tenés que ser mayor de 18 años.");
+      if (digits(row.phone).length < 6) return (err.textContent = "Dejá un teléfono de contacto.");
+      if (row.zone.length < 2) return (err.textContent = "Poné tu barrio y localidad.");
+      if (!row.reason) return (err.textContent = "Contanos por qué querés adoptar.");
+      if (!(row.commit_neuter && row.commit_vet && row.commit_followup && row.commit_return)) return (err.textContent = "Para adoptar en la red hay que aceptar los cuatro compromisos.");
+      const b = $("#f-save"); b.disabled = true;
+      const { error } = await sb.from("adopter_profiles").upsert(row);
+      b.disabled = false;
+      if (error) return (err.textContent = "No se pudo guardar. Probá de nuevo.");
+      toast("Ficha guardada");
+      const next = sessionStorage.getItem("ml_next"); sessionStorage.removeItem("ml_next");
+      location.hash = next || "#/perfil";
+    });
+  }
+
+  // ─────────────── Perfil público ───────────────
+  async function viewUser(id) {
+    const [{ data: u }, { data: revs }, rates, { data: pets }] = await Promise.all([
+      sb.from("profiles").select("*").eq("id", id).maybeSingle(),
+      sb.from("user_ratings").select("*, rater:profiles(id, display_name)").eq("rated_id", id).order("created_at", { ascending: false }).limit(50),
+      ratingsFor([id]),
+      sb.from("pets").select("*").eq("owner_id", id).neq("status", "adoptado").order("created_at", { ascending: false }).limit(12),
+    ]);
+    if (!u) { view.innerHTML = `<div class="empty"><h2>Este perfil no existe</h2><a class="btn" href="#/">Volver al inicio</a></div>`; return; }
+    const name = u.is_shelter && u.shelter_name ? u.shelter_name : u.display_name;
+    const roles = [u.is_rescuer && "Rescatista", u.is_shelter && "Refugio", u.is_foster && "Hogar de tránsito"].filter(Boolean);
+    view.innerHTML = `<div class="section-head"><div class="who" style="gap:16px"><span class="avatar" style="width:64px;height:64px;font-size:24px">${esc(initials(name))}</span>
+      <div><h1 style="font-size:clamp(26px,5vw,38px)">${esc(name || "Usuario")}</h1>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;align-items:center">${roles.map((r) => `<span class="chip plain">${r}</span>`).join("")}${u.city ? `<span style="color:var(--muted);font-size:14px">📍 ${esc(u.city)}</span>` : ""}</div></div></div></div>
+      ${u.bio ? `<p class="desc" style="margin-top:0">${esc(u.bio)}</p>` : ""}
+      <div class="card-box" style="margin-bottom:20px"><h3>Calificaciones ${starsHtml(rates[id])}</h3>
+        <p class="s" style="color:var(--muted);font-size:13px;margin:4px 0 12px">Solo califican personas que concretaron una adopción con este usuario.</p>
+        ${revs?.length ? `<div class="reviews">${revs.map((r) => `<div class="review"><div><span class="stars">${starRow(r.stars)}</span> <b>${esc(r.rater?.display_name || "Alguien")}</b> <span style="color:var(--muted);font-size:13px">· ${ago(r.created_at)}</span></div>${r.comment ? `<p>${esc(r.comment)}</p>` : ""}</div>`).join("")}</div>` : `<p style="margin:0">Todavía no tiene calificaciones.</p>`}</div>
+      ${pets?.length ? `<h2 style="margin-bottom:14px">En adopción</h2><div class="grid">${pets.map(flyerCard).join("")}</div>` : ""}`;
+  }
+
   // ─────────────── Panel ───────────────
   let panelTab = "publicadas";
   async function viewPanel() {
@@ -682,16 +854,27 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     view.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { panelTab = b.dataset.tab; viewPanel(); }));
     const body = $("#panel-body");
     if (panelTab === "publicadas") {
-      const { data: pets } = await sb.from("pets").select("*, requests:adoption_requests(*, adopter:profiles(display_name, city))").eq("owner_id", session.user.id).order("created_at", { ascending: false });
+      const { data: pets } = await sb.from("pets").select("*, requests:adoption_requests(*, adopter:profiles(id, display_name, city))").eq("owner_id", session.user.id).order("created_at", { ascending: false });
+      const allReqs = (pets || []).flatMap((p) => p.requests || []);
+      const adopterIds = [...new Set(allReqs.map((r) => r.adopter_id))];
+      const reqIds = allReqs.filter((r) => r.status === "aceptada").map((r) => r.id);
+      const [fichas, rates, extra] = await Promise.all([
+        adopterIds.length ? sb.from("adopter_profiles").select("*").in("id", adopterIds) : { data: [] },
+        adopterIds.length ? ratingsFor(adopterIds) : {},
+        afterAdoption(reqIds),
+      ]);
+      const fichaOf = Object.fromEntries((fichas.data || []).map((f) => [f.id, f]));
       if (!pets?.length) { body.innerHTML = `<div class="empty"><h3>Todavía no publicaste mascotas</h3><p>Cargá su foto y sus datos y armamos el flyer.</p><a class="btn" href="#/publicar">Dar en adopción</a></div>`; return; }
       body.innerHTML = pets.map((p) => {
         const reqs = (p.requests || []).sort((a, b) => b.created_at.localeCompare(a.created_at));
         const reqHtml = reqs.length ? reqs.map((r) => {
           const wa = waLink(r.contact);
-          return `<div class="req"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>${esc(r.adopter?.display_name || "Alguien")}</b>${r.adopter?.city ? `<span class="s" style="color:var(--muted);font-size:13px">· ${esc(r.adopter.city)}</span>` : ""} ${reqChip[r.status]} <span style="color:var(--muted);font-size:13px">${ago(r.created_at)}</span></div>
+          return `<div class="req"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><a href="#/usuario/${r.adopter_id}" style="text-decoration:none"><b>${esc(r.adopter?.display_name || "Alguien")}</b></a> ${starsHtml(rates[r.adopter_id])}${r.adopter?.city ? `<span class="s" style="color:var(--muted);font-size:13px">· ${esc(r.adopter.city)}</span>` : ""} ${reqChip[r.status]} <span style="color:var(--muted);font-size:13px">${ago(r.created_at)}</span></div>
             <p>${esc(r.message)}</p>
             <p>Contacto: <code style="user-select:all">${esc(r.contact)}</code>${wa ? ` · <a href="${wa}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700">WhatsApp →</a>` : ""}</p>
-            ${r.status === "pendiente" ? `<div class="actions"><button class="btn small" data-accept="${r.id}" data-pet="${p.id}">Aceptar</button><button class="btn ghost small" data-reject="${r.id}">No avanza</button></div>` : ""}</div>`;
+            ${fichaHtml(fichaOf[r.adopter_id])}
+            ${r.status === "pendiente" ? `<div class="actions"><button class="btn small" data-accept="${r.id}" data-pet="${p.id}">Aceptar</button><button class="btn ghost small" data-reject="${r.id}">No avanza</button></div>` : ""}
+            ${r.status === "aceptada" ? afterHtml(r, extra, r.adopter_id, r.adopter?.display_name || "quien adoptó", true) : ""}</div>`;
         }).join("") : `<p class="s" style="color:var(--muted);font-size:13px;margin:10px 0 0">Todavía no hay solicitudes.</p>`;
         return `<div class="card-box" style="padding:14px"><div class="row" style="border:0;padding:0">
           ${p.photo_thumb ? `<img src="${esc(photoUrl(p.photo_thumb))}" alt="">` : `<span class="thumb">${p.species === "gato" ? "🐈" : "🐕"}</span>`}
@@ -699,8 +882,9 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
           <div class="actions">${p.status !== "adoptado" ? `<button class="btn dark small" data-adopted="${p.id}">Marcar adoptado</button>` : ""}<a class="btn ghost small" href="#/editar/${p.id}">Editar</a><a class="btn ghost small" href="#/mascota/${p.id}">Ver</a></div>
         </div>${reqHtml}</div>`;
       }).join("");
+      wireAfter(body);
       body.addEventListener("click", async (e) => {
-        const b = e.target.closest("button"); if (!b) return;
+        const b = e.target.closest("button[data-accept],button[data-reject],button[data-adopted]"); if (!b) return;
         b.disabled = true;
         let error;
         if (b.dataset.accept) {
@@ -718,12 +902,15 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
         viewPanel();
       });
     } else {
-      const { data: reqs } = await sb.from("adoption_requests").select("*, pet:pets(id, name, species, photo_thumb, city, status)").eq("adopter_id", session.user.id).order("created_at", { ascending: false });
+      const { data: reqs } = await sb.from("adoption_requests").select("*, pet:pets(id, name, species, photo_thumb, city, status, owner_id)").eq("adopter_id", session.user.id).order("created_at", { ascending: false });
+      const extra = await afterAdoption((reqs || []).filter((r) => r.status === "aceptada").map((r) => r.id));
       if (!reqs?.length) { body.innerHTML = `<div class="empty"><h3>No mandaste solicitudes todavía</h3><p>Cuando una mascota te guste, entrá a su flyer y tocá "Quiero adoptar".</p><a class="btn" href="#/">Ver mascotas</a></div>`; return; }
-      body.innerHTML = reqs.map((r) => `<div class="row">
+      body.innerHTML = reqs.map((r) => `<div class="card-box" style="padding:14px"><div class="row" style="border:0;padding:0">
         ${r.pet?.photo_thumb ? `<img src="${esc(photoUrl(r.pet.photo_thumb))}" alt="">` : `<span class="thumb">🐾</span>`}
         <div><div class="t">${esc(r.pet?.name || "Publicación borrada")}</div><div class="s">${reqChip[r.status]} · enviada ${ago(r.created_at)}</div></div>
-        <div class="actions">${r.pet ? `<a class="btn ghost small" href="#/mascota/${r.pet.id}">Ver</a>` : ""}${r.status === "pendiente" ? `<button class="btn ghost small" data-cancel="${r.id}">Retirar</button>` : ""}</div></div>`).join("");
+        <div class="actions">${r.pet ? `<a class="btn ghost small" href="#/mascota/${r.pet.id}">Ver</a>` : ""}${r.status === "pendiente" ? `<button class="btn ghost small" data-cancel="${r.id}">Retirar</button>` : ""}</div></div>
+        ${r.status === "aceptada" && r.pet ? afterHtml(r, extra, r.pet.owner_id, "quien te la dio en adopción", false) : ""}</div>`).join("");
+      wireAfter(body);
       body.addEventListener("click", async (e) => {
         const b = e.target.closest("[data-cancel]"); if (!b) return;
         if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "¿Seguro?"; return; }
@@ -739,23 +926,27 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
   async function viewDirectory(kind) {
     const shelters = kind === "refugios";
     const col = shelters ? "is_shelter" : "is_foster";
-    const { data } = await sb.from("profiles").select("*").eq(col, true).order("created_at", { ascending: false }).limit(300);
-    const already = me && me[col];
+    let dq = sb.from("profiles").select("*").order("created_at", { ascending: false }).limit(300);
+    dq = shelters ? dq.or("is_shelter.eq.true,is_rescuer.eq.true") : dq.eq(col, true);
+    const { data } = await dq;
+    const already = me && (shelters ? (me.is_shelter || me.is_rescuer) : me[col]);
+    const rates = data?.length ? await ratingsFor(data.map((u) => u.id)) : {};
     const head = shelters
-      ? { t: "Refugios y rescatistas", l: "Organizaciones y personas que rescatan, cuidan y dan en adopción.", cta: "¿Tenés un refugio o rescatás animales?", ctaL: "Sumá tu refugio al directorio y publicá tus mascotas con su nombre.", btn: "Sumar mi refugio" }
+      ? { t: "Refugios y rescatistas", l: "Organizaciones y personas que rescatan, cuidan y dan en adopción.", cta: "¿Rescatás animales o tenés un refugio?", ctaL: "Sumate al directorio y publicá a tus rescatados.", btn: "Sumarme" }
       : { t: "Hogares de tránsito", l: "Personas que reciben una mascota en su casa por un tiempo, hasta que encuentre familia definitiva.", cta: "¿Podés ser tránsito?", ctaL: "Un tránsito le salva la vida a un animal mientras espera adopción. Anotate y los refugios te pueden contactar.", btn: "Ofrecerme como tránsito" };
     view.innerHTML = `<div class="section-head"><div><h1>${head.t}</h1><p class="lead">${head.l}</p></div></div>
-      ${already ? "" : `<div class="cta-band"><div><h3>${head.cta}</h3><p>${head.ctaL}</p></div><a class="btn" href="#/perfil" data-want="${col}">${head.btn}</a></div>`}
+      ${already ? "" : `<div class="cta-band"><div><h3>${head.cta}</h3><p>${head.ctaL}</p></div><a class="btn" href="#/perfil" data-want="${shelters ? "" : col}">${head.btn}</a></div>`}
       <div class="dir" id="dir"></div>`;
-    view.querySelector("[data-want]")?.addEventListener("click", () => sessionStorage.setItem("ml_want", col));
+    view.querySelector("[data-want]")?.addEventListener("click", (e) => { if (e.currentTarget.dataset.want) sessionStorage.setItem("ml_want", e.currentTarget.dataset.want); });
     const dir = $("#dir");
-    if (!data?.length) { dir.innerHTML = `<div class="empty" style="grid-column:1/-1"><h3>Todavía no hay ${shelters ? "refugios" : "tránsitos"} anotados</h3><p>Podés ser el primero.</p></div>`; return; }
+    if (!data?.length) { dir.innerHTML = `<div class="empty" style="grid-column:1/-1"><h3>Todavía no hay ${shelters ? "refugios ni rescatistas" : "tránsitos"} anotados</h3><p>Podés ser el primero.</p></div>`; return; }
     dir.innerHTML = data.map((u) => {
-      const name = shelters ? (u.shelter_name || u.display_name) : u.display_name;
+      const name = shelters && u.is_shelter ? (u.shelter_name || u.display_name) : u.display_name;
+      const roleChips = shelters ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${u.is_shelter ? '<span class="chip plain">Refugio</span>' : ""}${u.is_rescuer ? '<span class="chip plain">Rescatista</span>' : ""}${u.is_foster ? '<span class="chip plain">Tránsito</span>' : ""}</div>` : "";
       const wa = waLink(u.phone);
       const fosterInfo = !shelters ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip ${u.foster_species === "gato" ? "gato" : u.foster_species === "perro" ? "perro" : "plain"}">${u.foster_species === "ambos" ? "Perros y gatos" : u.foster_species === "perro" ? "Perros" : "Gatos"}</span><span class="chip plain">Hasta ${u.foster_capacity}</span></div>${u.foster_notes ? `<p style="margin:0;color:var(--muted);font-size:14px;overflow-wrap:anywhere">${esc(u.foster_notes)}</p>` : ""}` : "";
-      return `<article class="person"><div class="who"><span class="avatar">${esc(initials(name))}</span><div><h3 style="font-size:18px">${esc(name || "Sin nombre")}</h3>${u.city ? `<div style="color:var(--muted);font-size:13px">📍 ${esc(u.city)}</div>` : ""}</div></div>
-        ${fosterInfo}${shelters && u.bio ? `<p style="margin:0;font-size:14px;overflow-wrap:anywhere">${esc(u.bio)}</p>` : ""}
+      return `<article class="person"><div class="who"><span class="avatar">${esc(initials(name))}</span><div><h3 style="font-size:18px"><a href="#/usuario/${u.id}" style="text-decoration:none">${esc(name || "Sin nombre")}</a></h3><div style="color:var(--muted);font-size:13px">${u.city ? "📍 " + esc(u.city) + " · " : ""}${starsHtml(rates[u.id])}</div></div></div>
+        ${roleChips}${fosterInfo}${shelters && u.bio ? `<p style="margin:0;font-size:14px;overflow-wrap:anywhere">${esc(u.bio)}</p>` : ""}
         ${u.phone ? `<div class="phone"><code>${esc(u.phone)}</code><button class="btn ghost small" data-copy="${esc(u.phone)}">Copiar</button>${wa ? `<a href="${wa}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700;font-size:14px">WhatsApp →</a>` : ""}</div>` : ""}
       </article>`;
     }).join("");
@@ -772,20 +963,27 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     const want = sessionStorage.getItem("ml_want"); sessionStorage.removeItem("ml_want");
     const u = Object.assign({}, me || {});
     if (want === "is_shelter") u.is_shelter = true;
+    if (want === "is_rescuer") u.is_rescuer = true;
+    const fichaQ = await sb.from("adopter_profiles").select("updated_at").eq("id", session.user.id).maybeSingle();
+    const myRate = (await ratingsFor([session.user.id]))[session.user.id];
     if (want === "is_foster") u.is_foster = true;
-    view.innerHTML = `<div class="section-head"><div><h1>Mi perfil</h1><p class="lead">${esc(session.user.email)}</p></div><button class="btn ghost" id="logout" type="button">Cerrar sesión</button></div>
+    view.innerHTML = `<div class="section-head"><div><h1>Mi perfil</h1><p class="lead">${esc(session.user.email)} · ${starsHtml(myRate)} · <a href="#/usuario/${session.user.id}" style="color:var(--accent);font-weight:600">Ver mi perfil público</a></p></div><button class="btn ghost" id="logout" type="button">Cerrar sesión</button></div>
+      <div class="card-box ficha-cta" style="margin-bottom:16px"><div><h3>Ficha de adoptante responsable</h3>
+        <p class="lead" style="margin:4px 0 0">${fichaQ.data ? "Completa ✓ · Se envía con cada solicitud de adopción." : "Completala una vez y se envía con cada solicitud de adopción. Es obligatoria para adoptar."}</p></div>
+        <a class="btn ${fichaQ.data ? "ghost" : ""}" href="#/adoptante">${fichaQ.data ? "Editar ficha" : "Completar ficha"}</a></div>
       <form id="prof" class="card-box" novalidate><div class="form-grid">
         <label class="field">Tu nombre<input id="u-name" maxlength="80" value="${esc(u.display_name || "")}"></label>
         <label class="field">Ciudad o barrio<input id="u-city" maxlength="80" value="${esc(u.city || "")}"></label>
         <label class="field full">WhatsApp o teléfono <span class="hint">Es visible para los demás: sirve para que quienes quieran adoptar te avisen por WhatsApp y, si sos refugio o tránsito, para que te contacten.</span><input id="u-phone" maxlength="30" inputmode="tel" value="${esc(u.phone || "")}"></label>
         <fieldset class="full"><legend>Cómo querés participar</legend>
           <label class="check"><input type="checkbox" checked disabled> Adoptar y dar en adopción</label>
-          <label class="check"><input id="u-shelter" type="checkbox" ${u.is_shelter ? "checked" : ""}> Soy refugio o rescatista</label>
+          <label class="check"><input id="u-rescuer" type="checkbox" ${u.is_rescuer ? "checked" : ""}> Soy rescatista</label>
+          <label class="check"><input id="u-shelter" type="checkbox" ${u.is_shelter ? "checked" : ""}> Tengo un refugio</label>
           <label class="check"><input id="u-foster" type="checkbox" ${u.is_foster ? "checked" : ""}> Me ofrezco como tránsito</label>
         </fieldset>
-        <div class="full form-grid" id="shelter-box" ${u.is_shelter ? "" : "hidden"}>
-          <label class="field full">Nombre del refugio<input id="u-sname" maxlength="100" value="${esc(u.shelter_name || "")}"></label>
-          <label class="field full">Sobre el refugio<textarea id="u-bio" rows="3" maxlength="600" placeholder="Qué hacen, zona, cómo ayudar, alias para donaciones…">${esc(u.bio || "")}</textarea></label>
+        <div class="full form-grid" id="shelter-box" ${u.is_shelter || u.is_rescuer ? "" : "hidden"}>
+          <label class="field full" id="u-sname-f" ${u.is_shelter ? "" : "hidden"}>Nombre del refugio<input id="u-sname" maxlength="100" value="${esc(u.shelter_name || "")}"></label>
+          <label class="field full">Sobre tu trabajo de rescate <span class="hint">Se muestra en el directorio</span><textarea id="u-bio" rows="3" maxlength="600" placeholder="Qué hacen, zona, cómo ayudar, alias para donaciones…">${esc(u.bio || "")}</textarea></label>
         </div>
         <div class="full form-grid" id="foster-box" ${u.is_foster ? "" : "hidden"}>
           <label class="field">Puedo recibir<select id="u-fsp"><option value="ambos">Perros y gatos</option><option value="perro">Solo perros</option><option value="gato">Solo gatos</option></select></label>
@@ -796,28 +994,29 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
         <div class="actions full" style="justify-content:flex-end"><button class="btn" type="submit">Guardar perfil</button></div>
       </div></form>`;
     $("#u-fsp").value = u.foster_species || "ambos";
-    $("#u-shelter").addEventListener("change", (e) => ($("#shelter-box").hidden = !e.target.checked));
+    const paintRoles = () => { const sh = $("#u-shelter").checked, rs = $("#u-rescuer").checked; $("#shelter-box").hidden = !(sh || rs); $("#u-sname-f").hidden = !sh; };
+    $("#u-shelter").addEventListener("change", paintRoles); $("#u-rescuer").addEventListener("change", paintRoles);
     $("#u-foster").addEventListener("change", (e) => ($("#foster-box").hidden = !e.target.checked));
     $("#logout").addEventListener("click", async () => { try { await sb.auth.signOut(); } catch {} await refreshSession(); toast("Sesión cerrada"); location.hash = "#/"; });
     $("#prof").addEventListener("submit", async (e) => {
       e.preventDefault();
       const row = {
         display_name: $("#u-name").value.trim(), city: $("#u-city").value.trim(), phone: $("#u-phone").value.trim(),
-        is_shelter: $("#u-shelter").checked, shelter_name: $("#u-sname").value.trim(), bio: $("#u-bio").value.trim(),
+        is_shelter: $("#u-shelter").checked, is_rescuer: $("#u-rescuer").checked, shelter_name: $("#u-sname").value.trim(), bio: $("#u-bio").value.trim(),
         is_foster: $("#u-foster").checked, foster_species: $("#u-fsp").value,
         foster_capacity: Math.min(50, Math.max(1, parseInt($("#u-fcap").value, 10) || 1)), foster_notes: $("#u-fnotes").value.trim(),
       };
       if (!row.display_name) return ($("#u-err").textContent = "Poné tu nombre.");
       if (row.is_shelter && !row.shelter_name) return ($("#u-err").textContent = "Poné el nombre del refugio.");
-      if ((row.is_shelter || row.is_foster) && digits(row.phone).length < 6) return ($("#u-err").textContent = "Para aparecer en el directorio dejá un teléfono de contacto.");
-      const wasFoster = !!me?.is_foster, wasShelter = !!me?.is_shelter;
+      if ((row.is_shelter || row.is_rescuer || row.is_foster) && digits(row.phone).length < 6) return ($("#u-err").textContent = "Para aparecer en el directorio dejá un teléfono de contacto.");
+      const wasFoster = !!me?.is_foster, wasShelter = !!(me?.is_shelter || me?.is_rescuer);
       const btn = e.submitter || $("#prof button[type=submit]"); btn.disabled = true;
       const { error } = await sb.from("profiles").update(row).eq("id", session.user.id);
       btn.disabled = false;
       if (error) return ($("#u-err").textContent = "No se pudo guardar. Probá de nuevo.");
       await loadMe(); toast("Perfil guardado");
       if (row.is_foster && !wasFoster) location.hash = "#/transitos";
-      else if (row.is_shelter && !wasShelter) location.hash = "#/refugios";
+      else if ((row.is_shelter || row.is_rescuer) && !wasShelter) location.hash = "#/refugios";
     });
   }
 
@@ -829,9 +1028,14 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     view.innerHTML = `<div class="auth-box card-box">
       <div class="seg" role="tablist" style="margin-bottom:18px"><button type="button" data-m="login" aria-pressed="${!reg}" style="flex:1">Ingresar</button><button type="button" data-m="registro" aria-pressed="${reg}" style="flex:1">Crear cuenta</button></div>
       <h2>${reg ? "Creá tu cuenta" : "Hola de nuevo"}</h2>
-      <p class="lead" style="margin-bottom:16px">${reg ? "Con una cuenta podés publicar, pedir adopciones y sumarte como refugio o tránsito." : "Ingresá con tu email y contraseña."}</p>
+      <p class="lead" style="margin-bottom:16px">${reg ? "Con una cuenta podés publicar, pedir adopciones y sumarte como rescatista, refugio o tránsito." : "Ingresá con tu email y contraseña."}</p>
       <form id="auth" novalidate style="display:flex;flex-direction:column;gap:12px">
         ${reg ? '<label class="field">Tu nombre<input id="a-name" autocomplete="name" maxlength="80"></label>' : ""}
+        ${reg ? `<fieldset><legend>¿Cómo querés participar?</legend>
+          <label class="check"><input type="checkbox" checked disabled> Adoptar y dar en adopción</label>
+          <label class="check"><input type="checkbox" name="rol" value="rescatista"> Soy rescatista</label>
+          <label class="check"><input type="checkbox" name="rol" value="refugio"> Tengo un refugio</label>
+          <label class="check"><input type="checkbox" name="rol" value="transito"> Puedo ser hogar de tránsito</label></fieldset>` : ""}
         <label class="field">Email<input id="a-email" type="email" autocomplete="email" required></label>
         <label class="field">Contraseña ${reg ? '<span class="hint">Mínimo 6 caracteres</span>' : ""}<input id="a-pass" type="password" autocomplete="${reg ? "new-password" : "current-password"}" minlength="6" required></label>
         <p class="err" id="a-err" role="alert"></p>
@@ -859,6 +1063,9 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
         if (authMode === "registro") {
           const name = $("#a-name").value.trim();
           if (!name) { btn.disabled = false; return (errEl.textContent = "Poné tu nombre."); }
+          const roles = [...view.querySelectorAll('input[name="rol"]:checked')].map((x) => x.value);
+          sessionStorage.setItem("ml_roles", JSON.stringify(roles));
+          if (roles.length) sessionStorage.setItem("ml_next", "#/perfil");
           const { error } = await sb.auth.signUp.email({ email, password: pass, name });
           if (error) {
             btn.disabled = false;
