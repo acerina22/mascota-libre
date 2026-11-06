@@ -272,3 +272,6 @@ legend{font-size:13px;font-weight:600;padding:0 4px}
 .lf-btn-found{background:#1C7D66;color:#fff}
 @media (max-width:520px){.lf-cta{grid-template-columns:1fr}}
 .banner .actions{flex-wrap:wrap}
+@media (max-width:560px){.form-grid{grid-template-columns:minmax(0,1fr)}}
+.form-grid > .seg{width:auto!important;max-width:100%}
+.form-grid > .seg button{flex:1 1 0;white-space:normal;line-height:1.2}
