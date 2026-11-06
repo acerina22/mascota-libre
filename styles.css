@@ -196,7 +196,7 @@ legend{font-size:13px;font-weight:600;padding:0 4px}
   .avatar{width:32px;height:32px;font-size:13px}
   .lg-only{display:none}.sm-only{display:inline}
   .links{order:3;width:100%;gap:2px;margin-inline:-6px;padding-bottom:6px}
-  .links a{font-size:14px;padding:5px 10px;white-space:nowrap}
+  .links a{font-size:13.5px;padding:5px 8px;white-space:nowrap}
   main{padding-block:16px 48px}
 }
 
@@ -256,3 +256,19 @@ legend{font-size:13px;font-weight:600;padding:0 4px}
 .firma{margin-top:10px;font-weight:600;color:var(--ink)}
 .firma a{color:var(--accent);text-decoration:none}
 .firma a:hover{text-decoration:underline}
+
+/* perdidos y encontrados */
+:root{--lost:#D92D20;--lost-bg:#FDE7E5;--found:#1C7D66;--found-bg:#DDF2EB}
+@media (prefers-color-scheme:dark){:root{--lost:#FF8A80;--lost-bg:#3D1715;--found:#5DD3B1;--found-bg:#173A31}}
+.chip.lf-lost{background:var(--lost);color:#fff;letter-spacing:.06em}
+.chip.lf-found{background:var(--found);color:#fff;letter-spacing:.06em}
+.flyer.lf.perdido .ribbon .adopt{background:#D92D20;color:#fff}
+.flyer.lf.encontrado .ribbon .adopt{background:#1C7D66;color:#fff}
+.lf-poster.perdido .band{background:#D92D20;color:#fff}
+.lf-poster.encontrado .band{background:#1C7D66;color:#fff}
+.lf-cta{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}
+.lf-cta .btn{padding:16px;font-size:16px}
+.lf-btn-lost{background:#D92D20;color:#fff}
+.lf-btn-found{background:#1C7D66;color:#fff}
+@media (max-width:520px){.lf-cta{grid-template-columns:1fr}}
+.banner .actions{flex-wrap:wrap}

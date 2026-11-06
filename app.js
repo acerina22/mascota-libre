@@ -146,6 +146,9 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     [/^#\/transitos$/, () => viewDirectory("transitos"), "transitos"],
     [/^#\/perfil$/, viewProfile, ""],
     [/^#\/ingresar$/, viewAuth, ""],
+    [/^#\/perdidos$/, viewLost, "perdidos"],
+    [/^#\/perdidos\/nuevo$/, viewLostForm, "perdidos"],
+    [/^#\/aviso\/([\w-]+)$/, viewLostItem, "perdidos"],
   ];
   async function route() {
     const h = location.hash || "#/";
@@ -188,7 +191,7 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
           <span class="kicker">Red de adopción responsable gratuita</span>
           <h1>No compres, <span class="hl">adoptá</span></h1>
           <p class="lead">Perros y gatos que buscan casa, publicados por refugios, rescatistas y vecinos. Sumate a la red: adoptá, da en adopción u ofrecete como tránsito.</p>
-          <div class="actions"><a class="btn" href="#resultados" id="go-results">Quiero adoptar</a><a class="btn ghost on-dark" href="#/publicar">Dar en adopción</a></div>
+          <div class="actions"><a class="btn" href="#resultados" id="go-results">Quiero adoptar</a><a class="btn ghost on-dark" href="#/perdidos">Perdidos y encontrados</a><a class="btn ghost on-dark" href="#/publicar">Dar en adopción</a></div>
           <div class="stats" id="stats"></div>
         </div>
         <div class="collage" id="collage">${collageTiles([])}</div>
@@ -486,6 +489,184 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
         err.textContent = ex.message === "foto" ? "No se pudo subir la foto. Probá con otra imagen o revisá tu conexión." : "No se pudo guardar. Revisá los datos y probá de nuevo.";
         btn.disabled = false; btn.textContent = p ? "Guardar cambios" : "Publicar";
       }
+    });
+  }
+
+  // ─────────────── Perdidos y encontrados ───────────────
+  const lfDate = (d) => { if (!d) return ""; const [y, m, dd] = d.split("-"); return `${dd}/${m}`; };
+  const lfTitle = (it) => it.kind === "perdido"
+    ? `Se perdió ${it.name ? esc(it.name) : (it.species === "gato" ? "un gato" : "un perro")}`
+    : `${it.name ? "Encontramos a " + esc(it.name) : "Encontramos " + (it.sex === "hembra" ? (it.species === "gato" ? "una gatita" : "una perrita") : (it.species === "gato" ? "un gato" : "un perro"))}`;
+  const lfBadge = (it) => it.status === "resuelto"
+    ? `<span class="chip ok">${it.kind === "perdido" ? "¡Volvió a casa!" : "¡Ya está con su familia!"}</span>`
+    : it.kind === "perdido" ? `<span class="chip lf-lost">SE BUSCA</span>` : `<span class="chip lf-found">ENCONTRADO</span>`;
+  const lfFilter = { kind: "", species: "", q: "" };
+  function lfCard(it) {
+    const img = it.photo_thumb ? `<img src="${esc(it.photo_thumb)}" alt="Foto" loading="lazy">` : `<span class="noimg" aria-hidden="true">${it.species === "gato" ? "🐈" : "🐕"}</span>`;
+    return `<a class="flyer lf ${it.kind}" href="#/aviso/${it.id}">
+      <div class="ph">${img}<div class="top">${lfBadge(it)}</div>${it.status === "resuelto" ? '<div class="stamp"><span>' + (it.kind === "perdido" ? "Volvió" : "Reunido") + "</span></div>" : ""}
+        <div class="ribbon"><span class="adopt">${it.kind === "perdido" ? "Ayudá a encontrarlo" : "¿Es tuyo?"}</span><div class="nm" style="font-size:24px">${lfTitle(it)}</div></div></div>
+      <div class="info"><div class="loc">📍 ${esc(it.zone)} · ${it.kind === "perdido" ? "desde el" : "el"} ${lfDate(it.happened_on)}</div></div></a>`;
+  }
+  async function viewLost() {
+    view.innerHTML = `<div class="section-head"><div><h1>Perdidos y encontrados</h1>
+      <p class="lead">Si se te perdió tu mascota o encontraste una en la calle, publicalo acá. Mientras más gente lo vea, más rápido vuelve a casa.</p></div></div>
+      <div class="lf-cta">
+        <a class="btn lf-btn-lost" href="#/perdidos/nuevo" data-k="perdido">Se perdió mi mascota</a>
+        <a class="btn lf-btn-found" href="#/perdidos/nuevo" data-k="encontrado">Encontré una mascota</a>
+      </div>
+      <div class="filters">
+        <div class="seg" role="group" aria-label="Tipo de aviso">
+          <button type="button" data-k="" aria-pressed="${!lfFilter.kind}">Todos</button>
+          <button type="button" data-k="perdido" aria-pressed="${lfFilter.kind === "perdido"}">Se buscan</button>
+          <button type="button" data-k="encontrado" aria-pressed="${lfFilter.kind === "encontrado"}">Encontrados</button>
+        </div>
+        <select id="lf-sp" aria-label="Especie"><option value="">Perros y gatos</option><option value="perro">Perros</option><option value="gato">Gatos</option></select>
+        <input id="lf-q" type="search" placeholder="Buscar por barrio o calle" aria-label="Buscar" value="${esc(lfFilter.q)}">
+      </div>
+      <div id="lf-list" class="grid"><div class="skeleton"></div><div class="skeleton"></div></div>`;
+    $("#lf-sp").value = lfFilter.species;
+    view.querySelectorAll(".lf-cta a").forEach((a) => a.addEventListener("click", () => sessionStorage.setItem("ml_lf_kind", a.dataset.k)));
+    view.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => { lfFilter.kind = b.dataset.k; view.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); loadLost(); }));
+    $("#lf-sp").addEventListener("change", (e) => { lfFilter.species = e.target.value; loadLost(); });
+    let qt; $("#lf-q").addEventListener("input", (e) => { lfFilter.q = e.target.value; clearTimeout(qt); qt = setTimeout(loadLost, 300); });
+    await loadLost();
+  }
+  async function loadLost() {
+    const box = $("#lf-list"); if (!box) return;
+    let q = sb.from("lost_found").select("*").order("created_at", { ascending: false }).limit(60);
+    if (lfFilter.kind) q = q.eq("kind", lfFilter.kind);
+    if (lfFilter.species) q = q.eq("species", lfFilter.species);
+    const term = lfFilter.q.trim().replace(/[%,()]/g, " ");
+    if (term) q = q.or(`zone.ilike.%${term}%,name.ilike.%${term}%,description.ilike.%${term}%`);
+    const { data, error } = await q;
+    if (!$("#lf-list")) return;
+    if (error) { box.innerHTML = `<div class="empty" style="grid-column:1/-1"><h3>No pudimos cargar los avisos</h3><p>Revisá tu conexión y probá de nuevo.</p></div>`; return; }
+    if (!data.length) { box.innerHTML = `<div class="empty" style="grid-column:1/-1"><h3>${term || lfFilter.kind || lfFilter.species ? "No hay avisos que coincidan" : "Todavía no hay avisos"}</h3><p>Si se te perdió o encontraste una mascota, publicalo y lo difundimos.</p></div>`; return; }
+    const active = data.filter((x) => x.status !== "resuelto"), done = data.filter((x) => x.status === "resuelto");
+    box.innerHTML = active.concat(done).map(lfCard).join("");
+  }
+  async function viewLostItem(id) {
+    const { data: it } = await sb.from("lost_found").select("*").eq("id", id).maybeSingle();
+    if (!it) { view.innerHTML = `<div class="empty"><h2>Este aviso ya no está</h2><a class="btn" href="#/perdidos">Ver otros avisos</a></div>`; return; }
+    const ph = await sb.from("lost_found_photos").select("data").eq("item_id", id).maybeSingle();
+    const full = ph.data?.data || it.photo_thumb || "";
+    const mine = session && session.user.id === it.owner_id;
+    const wa = waLink(it.contact);
+    const sexTxt = it.sex === "macho" ? "Macho" : it.sex === "hembra" ? "Hembra" : "No se sabe";
+    view.innerHTML = `<p style="margin:0 0 14px"><a href="#/perdidos" style="color:var(--muted);font-weight:600;text-decoration:none">← Perdidos y encontrados</a></p>
+      <div class="detail">
+        <article class="poster lf-poster ${it.kind}">
+          <div class="ph">${full ? `<img src="${esc(full)}" alt="Foto">` : ""}${it.status === "resuelto" ? '<div class="stamp"><span>' + (it.kind === "perdido" ? "Volvió" : "Reunido") + "</span></div>" : ""}</div>
+          <div class="band"><small>${it.kind === "perdido" ? "Se busca · ayudá a difundir" : "Encontrado · ¿es tuyo?"}</small><h1 style="font-size:clamp(30px,6vw,46px)">${lfTitle(it)}</h1></div>
+        </article>
+        <div class="side">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">${lfBadge(it)}<span class="chip ${it.species}">${it.species === "gato" ? "Gato" : "Perro"}</span></div>
+          <dl class="spec">
+            <div><dt>${it.kind === "perdido" ? "Se perdió en" : "Lo encontramos en"}</dt><dd>${esc(it.zone)}</dd></div>
+            <div><dt>Fecha</dt><dd>${lfDate(it.happened_on)}</dd></div>
+            <div><dt>Sexo</dt><dd>${sexTxt}</dd></div>
+            <div><dt>Especie</dt><dd>${it.species === "gato" ? "Gato" : "Perro"}</dd></div>
+          </dl>
+          ${it.description ? `<p class="desc">${esc(it.description)}</p>` : ""}
+          <div class="card-box"><h3>${it.kind === "perdido" ? "¿Lo viste?" : "¿Es tuyo o sabés de quién es?"}</h3>
+            <p class="lead" style="margin:6px 0 12px">Comunicate con quien publicó el aviso:</p>
+            <div class="phone" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><code style="font:700 20px var(--body);user-select:all">${esc(it.contact)}</code>
+              <button class="btn ghost small" type="button" id="lf-copy">Copiar</button>
+              ${wa ? `<a class="btn small" target="_blank" rel="noopener" href="${wa}?text=${encodeURIComponent(`Hola! Te escribo por el aviso de Mascota Libre: ${location.origin}${location.pathname}#/aviso/${it.id}`)}">WhatsApp</a>` : ""}</div></div>
+          ${mine ? `<div class="actions">${it.status !== "resuelto" ? `<button class="btn dark" id="lf-done" type="button">${it.kind === "perdido" ? "¡Volvió a casa!" : "Ya está con su familia"}</button>` : ""}<button class="btn ghost" id="lf-del" type="button">Borrar aviso</button></div>` : ""}
+          <button class="btn ghost" id="lf-share" type="button">Descargar flyer para difundir</button>
+        </div></div>`;
+    $("#lf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(it.contact); toast("Teléfono copiado"); } catch { toast(it.contact); } });
+    $("#lf-share").addEventListener("click", () => makeLostFlyer(it, full));
+    $("#lf-done")?.addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      const { error } = await sb.from("lost_found").update({ status: "resuelto" }).eq("id", it.id);
+      if (error) { e.target.disabled = false; return toast("No se pudo guardar"); }
+      toast("¡Qué alegría! 🎉"); viewLostItem(id);
+    });
+    $("#lf-del")?.addEventListener("click", async (e) => {
+      const b = e.target;
+      if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "¿Seguro? Tocá de nuevo"; return; }
+      b.disabled = true;
+      const { error } = await sb.from("lost_found").delete().eq("id", it.id);
+      if (error) { b.disabled = false; return toast("No se pudo borrar"); }
+      toast("Aviso borrado"); location.hash = "#/perdidos";
+    });
+  }
+  function makeLostFlyer(it, photo) {
+    const W = 1080, H = 1350, c = document.createElement("canvas"); c.width = W; c.height = H; const g = c.getContext("2d");
+    const col = it.kind === "perdido" ? "#D92D20" : "#1C7D66";
+    const draw = (img) => {
+      g.fillStyle = "#fff"; g.fillRect(0, 0, W, H);
+      g.fillStyle = col; g.fillRect(0, 0, W, 170);
+      g.fillStyle = "#fff"; g.font = "800 92px 'Bricolage Grotesque', sans-serif"; g.textAlign = "center";
+      g.fillText(it.kind === "perdido" ? "SE BUSCA" : "ENCONTRADO", W / 2, 118);
+      const ph = 820, top = 170;
+      if (img) { const s = Math.max(W / img.width, ph / img.height), w = img.width * s, h = img.height * s; g.save(); g.beginPath(); g.rect(0, top, W, ph); g.clip(); g.drawImage(img, (W - w) / 2, top + (ph - h) / 3, w, h); g.restore(); }
+      g.fillStyle = "#22183A"; g.textAlign = "left";
+      g.font = "800 64px 'Bricolage Grotesque', sans-serif"; g.fillText((it.name || (it.species === "gato" ? "Gato" : "Perro")).slice(0, 22), 60, top + ph + 90);
+      g.font = "600 38px 'Figtree', sans-serif"; g.fillText("📍 " + it.zone.slice(0, 44), 60, top + ph + 150);
+      g.fillText((it.kind === "perdido" ? "Desde el " : "El ") + lfDate(it.happened_on), 60, top + ph + 200);
+      g.fillStyle = col; g.font = "800 58px 'Figtree', sans-serif"; g.fillText("☎ " + it.contact, 60, top + ph + 290);
+      g.fillStyle = "#6B6380"; g.font = "600 28px 'Figtree', sans-serif"; g.textAlign = "right"; g.fillText("Mascota Libre · ayudá a difundir", W - 60, H - 30);
+      c.toBlob((b) => { if (!b) return toast("No se pudo generar el flyer"); const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = (it.kind === "perdido" ? "se-busca-" : "encontrado-") + (it.name || it.species).toLowerCase().replace(/[^a-z0-9]+/gi, "-") + ".png"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }, "image/png");
+    };
+    if (!photo) return draw(null);
+    const img = new Image(); img.onload = () => draw(img); img.onerror = () => draw(null); img.src = photo;
+  }
+  async function viewLostForm() {
+    if (!requireLogin("#/perdidos/nuevo")) return;
+    let kind = sessionStorage.getItem("ml_lf_kind") || "perdido"; sessionStorage.removeItem("ml_lf_kind");
+    const today = new Date().toISOString().slice(0, 10);
+    view.innerHTML = `<div class="section-head"><div><h1>Publicar aviso</h1><p class="lead">Con una buena foto y el lugar exacto, es mucho más fácil que lo reconozcan.</p></div></div>
+      <form id="lf-form" class="card-box" novalidate><div class="form-grid">
+        <div class="full seg" role="group" aria-label="Tipo de aviso" style="width:max-content;max-width:100%">
+          <button type="button" data-k="perdido" aria-pressed="${kind === "perdido"}">Se perdió mi mascota</button>
+          <button type="button" data-k="encontrado" aria-pressed="${kind === "encontrado"}">Encontré una mascota</button>
+        </div>
+        <label class="field full">Foto <span class="hint">De cerca, que se vea bien la cara y el pelaje.</span>
+          <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><img id="l-prev" alt="" hidden style="width:120px;height:150px;object-fit:cover;border-radius:12px"><input id="l-photo" type="file" accept="image/*" style="flex:1 1 200px"></div></label>
+        <label class="field" id="l-name-f">Nombre <span class="hint" id="l-name-h">Cómo se llama</span><input id="l-name" maxlength="40"></label>
+        <label class="field">Especie<select id="l-sp"><option value="perro">Perro</option><option value="gato">Gato</option></select></label>
+        <label class="field">Sexo<select id="l-sex"><option value="no_se">No sé</option><option value="hembra">Hembra</option><option value="macho">Macho</option></select></label>
+        <label class="field">Fecha<input id="l-date" type="date" max="${today}" value="${today}"></label>
+        <label class="field full"><span id="l-zone-l">¿Dónde se perdió?</span> <span class="hint">Calles, barrio y localidad</span><input id="l-zone" maxlength="120" placeholder="Ej.: Güemes y Castro Barros, Lanús"></label>
+        <label class="field full">Señas <span class="hint">Color, collar, chapita, si es asustadizo…</span><textarea id="l-desc" rows="3" maxlength="800"></textarea></label>
+        <label class="field full">Teléfono o WhatsApp de contacto <span class="hint">Se muestra en el aviso para que te llamen</span><input id="l-contact" maxlength="60" inputmode="tel" value="${esc(me?.phone || "")}"></label>
+        <p class="err full" id="l-err" role="alert"></p>
+        <div class="actions full" style="justify-content:flex-end"><button class="btn" type="submit" id="l-save">Publicar aviso</button></div>
+      </div></form>`;
+    const paint = () => {
+      view.querySelectorAll("[data-k]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === kind)));
+      $("#l-zone-l").textContent = kind === "perdido" ? "¿Dónde se perdió?" : "¿Dónde lo encontraste?";
+      $("#l-name-h").textContent = kind === "perdido" ? "Cómo se llama" : "Si tiene chapita con nombre (opcional)";
+    };
+    paint();
+    view.querySelectorAll("[data-k]").forEach((b) => b.addEventListener("click", () => { kind = b.dataset.k; paint(); }));
+    let photos = null;
+    $("#l-photo").addEventListener("change", async (e) => {
+      const f = e.target.files?.[0]; if (!f) return;
+      try { photos = await makePhotos(f); $("#l-prev").src = photos.thumb; $("#l-prev").hidden = false; $("#l-err").textContent = ""; }
+      catch { photos = null; $("#l-err").textContent = "No pudimos leer esa imagen. Probá con otra foto."; }
+    });
+    $("#lf-form").addEventListener("submit", async (e) => {
+      e.preventDefault(); const err = $("#l-err"); err.textContent = "";
+      const row = { kind, name: $("#l-name").value.trim(), species: $("#l-sp").value, sex: $("#l-sex").value, happened_on: $("#l-date").value || today,
+        zone: $("#l-zone").value.trim(), description: $("#l-desc").value.trim(), contact: $("#l-contact").value.trim(), owner_id: session.user.id };
+      if (kind === "perdido" && !row.name) return (err.textContent = "Poné el nombre de tu mascota.");
+      if (row.zone.length < 3) return (err.textContent = "Contá dónde fue: calles y barrio.");
+      if (digits(row.contact).length < 6) return (err.textContent = "Dejá un teléfono para que te puedan avisar.");
+      if (!photos) return (err.textContent = "Subí una foto: es lo que más ayuda a reconocerlo.");
+      const btn = $("#l-save"); btn.disabled = true; btn.textContent = "Publicando…";
+      try {
+        row.photo_thumb = photos.thumb;
+        const res = await sb.from("lost_found").insert(row).select("id").single();
+        if (res.error) throw res.error;
+        const up = await sb.from("lost_found_photos").upsert({ item_id: res.data.id, data: photos.full });
+        if (up.error) throw up.error;
+        toast("Aviso publicado. ¡Compartilo!"); location.hash = "#/aviso/" + res.data.id;
+      } catch { err.textContent = "No se pudo publicar. Probá de nuevo."; btn.disabled = false; btn.textContent = "Publicar aviso"; }
     });
   }
 
