@@ -232,3 +232,9 @@ legend{font-size:13px;font-weight:600;padding:0 4px}
   .faces img:nth-child(1){left:0}.faces img:nth-child(2){left:13%}.faces img:nth-child(3){left:27%}
   .faces img:nth-child(4){left:41%}.faces img:nth-child(5){left:55%}.faces img:nth-child(6){left:69%}.faces img:nth-child(7){left:83%}
 }
+
+/* encabezado: una sola imagen con caritas fusionadas, difuminada */
+.faces{background:url("https://res.cloudinary.com/fqvcnfdu/image/upload/c_fill,w_1600,h_360,g_auto,q_auto,f_auto/mascota-libre/fusion-caritas.jpg") center 40%/cover no-repeat;
+  opacity:.34;filter:saturate(1.05);
+  -webkit-mask-image:linear-gradient(90deg,rgb(0 0 0 / .5),#000 25%,#000 75%,rgb(0 0 0 / .5));mask-image:linear-gradient(90deg,rgb(0 0 0 / .5),#000 25%,#000 75%,rgb(0 0 0 / .5))}
+@media (prefers-color-scheme:dark){.faces{opacity:.28}}
