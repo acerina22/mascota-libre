@@ -168,10 +168,15 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
   const filters = { species: "", sex: "", size: "", q: "", showAdopted: false };
   async function viewExplore() {
     view.innerHTML = `
-      <section class="hero">
-        <div><h1>Perros y gatos que <span style="color:var(--accent)">buscan casa</span></h1>
-        <p class="lead">Publica quien sea: un refugio, un rescatista o un vecino. Elegí, mandá tu solicitud y coordiná directo con quien lo cuida.</p></div>
-        <div class="stats" id="stats"></div>
+      <section class="banner">
+        <div class="banner-copy">
+          <span class="kicker">Adopción responsable · gratis</span>
+          <h1>Perros y gatos que <span class="hl">buscan casa</span></h1>
+          <p class="lead">Publica quien sea: un refugio, un rescatista o un vecino. Elegí, mandá tu solicitud y coordiná directo con quien lo cuida.</p>
+          <div class="actions"><a class="btn" href="#resultados" id="go-results">Quiero adoptar</a><a class="btn ghost on-dark" href="#/publicar">Dar en adopción</a></div>
+          <div class="stats" id="stats"></div>
+        </div>
+        <div class="collage" id="collage" aria-hidden="true">${collageTiles([])}</div>
       </section>
       <div class="filters">
         <div class="seg" role="group" aria-label="Especie">
@@ -184,7 +189,7 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
         <input id="f-q" type="search" placeholder="Buscar por ciudad, barrio o nombre" aria-label="Buscar" value="${esc(filters.q)}">
         <label class="check"><input id="f-adopted" type="checkbox" ${filters.showAdopted ? "checked" : ""}> Ver adoptados</label>
       </div>
-      <div id="results" class="grid"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>`;
+      <div id="results" class="grid" style="scroll-margin-top:90px"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>`;
     $("#f-sex").value = filters.sex; $("#f-size").value = filters.size;
     view.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => {
       filters.species = b.dataset.sp;
@@ -195,8 +200,27 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     $("#f-size").addEventListener("change", (e) => { filters.size = e.target.value; loadResults(); });
     let qt; $("#f-q").addEventListener("input", (e) => { filters.q = e.target.value; clearTimeout(qt); qt = setTimeout(loadResults, 300); });
     $("#f-adopted").addEventListener("change", (e) => { filters.showAdopted = e.target.checked; loadResults(); });
+    $("#go-results").addEventListener("click", (e) => { e.preventDefault(); $("#results").scrollIntoView({ behavior: "smooth" }); });
     loadStats();
+    loadCollage();
     await loadResults();
+  }
+  // Banner: fotos fijas (img/banner-*.jpg en config) + caras de mascotas publicadas
+  function collageTiles(srcs) {
+    const fill = ["perro", "gato", "perro", "gato", "perro", "gato"];
+    return fill.map((sp, i) => srcs[i]
+      ? `<div class="tile t${i}"><img src="${esc(srcs[i])}" alt="" loading="${i < 2 ? "eager" : "lazy"}"></div>`
+      : `<div class="tile t${i} ph-${sp}"><svg viewBox="0 0 24 24"><circle cx="6" cy="9" r="2.2"/><circle cx="10" cy="5.5" r="2.2"/><circle cx="14" cy="5.5" r="2.2"/><circle cx="18" cy="9" r="2.2"/><path d="M12 11c-3.2 0-6 3.6-6 6.2 0 1.6 1.2 2.3 2.6 2.3 1.3 0 2.2-.7 3.4-.7s2.1.7 3.4.7c1.4 0 2.6-.7 2.6-2.3 0-2.6-2.8-6.2-6-6.2z"/></svg></div>`).join("");
+  }
+  async function loadCollage() {
+    const fixed = (CFG.BANNER_IMAGES || []).slice(0, 6);
+    let srcs = fixed;
+    if (fixed.length < 6) {
+      const { data } = await sb.from("pets").select("photo_thumb").neq("photo_thumb", "").neq("status", "adoptado").order("created_at", { ascending: false }).limit(6 - fixed.length);
+      srcs = fixed.concat((data || []).map((r) => r.photo_thumb));
+    }
+    const el = $("#collage");
+    if (el && srcs.length) el.innerHTML = collageTiles(srcs);
   }
   async function loadStats() {
     const [a, b] = await Promise.all([
