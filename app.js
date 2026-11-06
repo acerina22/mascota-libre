@@ -214,7 +214,7 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     $("#f-sex").addEventListener("change", (e) => { filters.sex = e.target.value; loadResults(); });
     $("#f-size").addEventListener("change", (e) => { filters.size = e.target.value; loadResults(); });
     let qt; $("#f-q").addEventListener("input", (e) => { filters.q = e.target.value; clearTimeout(qt); qt = setTimeout(loadResults, 300); });
-    $("#f-adopted").addEventListener("change", (e) => { filters.showAdopted = e.target.checked; loadResults(); });
+    $("#f-adopted").addEventListener("change", (e) => { filters.showAdopted = e.target.checked; filters.onlyAdopted = false; loadResults(); });
     $("#go-results").addEventListener("click", (e) => { e.preventDefault(); $("#results").scrollIntoView({ behavior: "smooth" }); });
     loadStats();
     loadCollage();
@@ -243,7 +243,14 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
       sb.from("pets").select("id", { count: "exact", head: true }).eq("status", "adoptado"),
     ]);
     const el = $("#stats"); if (!el) return;
-    el.innerHTML = `<div class="stat"><b>${a.count ?? 0}</b><span>esperando casa</span></div><div class="stat"><b>${b.count ?? 0}</b><span>ya adoptados</span></div>`;
+    el.innerHTML = `<button type="button" class="stat" data-show="esperando"><b>${a.count ?? 0}</b><span>esperando casa →</span></button><button type="button" class="stat" data-show="adoptados"><b>${b.count ?? 0}</b><span>ya adoptados →</span></button>`;
+    el.querySelectorAll("[data-show]").forEach((btn) => btn.addEventListener("click", async () => {
+      const adopted = btn.dataset.show === "adoptados";
+      filters.showAdopted = adopted; filters.onlyAdopted = adopted;
+      const chk = $("#f-adopted"); if (chk) chk.checked = adopted;
+      await loadResults();
+      $("#results")?.scrollIntoView({ behavior: "smooth" });
+    }));
   }
   async function loadResults() {
     const box = $("#results"); if (!box) return;
@@ -251,7 +258,8 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     if (filters.species) q = q.eq("species", filters.species);
     if (filters.sex) q = q.eq("sex", filters.sex);
     if (filters.size) q = q.eq("size", filters.size);
-    if (!filters.showAdopted) q = q.neq("status", "adoptado");
+    if (filters.onlyAdopted) q = q.eq("status", "adoptado");
+    else if (!filters.showAdopted) q = q.neq("status", "adoptado");
     const term = filters.q.trim().replace(/[%,()]/g, " ");
     if (term) q = q.or(`city.ilike.%${term}%,name.ilike.%${term}%,breed.ilike.%${term}%`);
     const { data, error } = await q;

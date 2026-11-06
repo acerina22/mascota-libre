@@ -238,3 +238,10 @@ legend{font-size:13px;font-weight:600;padding:0 4px}
   opacity:.34;filter:saturate(1.05);
   -webkit-mask-image:linear-gradient(90deg,rgb(0 0 0 / .5),#000 25%,#000 75%,rgb(0 0 0 / .5));mask-image:linear-gradient(90deg,rgb(0 0 0 / .5),#000 25%,#000 75%,rgb(0 0 0 / .5))}
 @media (prefers-color-scheme:dark){.faces{opacity:.28}}
+
+/* contadores del banner: se pueden tocar */
+.banner .stats{display:flex;gap:12px;flex-wrap:wrap}
+.banner .stat{appearance:none;border:0;cursor:pointer;text-align:left;font:inherit;color:inherit;background:rgb(255 255 255 / .08);border-radius:14px;padding:10px 16px;display:flex;flex-direction:column;min-width:0}
+.banner .stat:hover{background:rgb(255 255 255 / .14)}
+.banner .stat b{font:800 30px/1.05 var(--display)}
+@media (max-width:760px){.banner .actions .btn{flex:1 1 auto}}
