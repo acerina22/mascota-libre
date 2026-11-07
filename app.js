@@ -196,10 +196,11 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
           <h1>No compres, <span class="hl">adoptá</span></h1>
           <p class="lead">Perros y gatos que buscan casa, publicados por refugios, rescatistas y vecinos. Sumate a la red: adoptá, da en adopción u ofrecete como tránsito.</p>
           <div class="actions"><a class="btn" href="#resultados" id="go-results">Quiero adoptar</a><a class="btn ghost on-dark" href="#/perdidos">Perdidos y encontrados</a><a class="btn ghost on-dark" href="#/publicar">Dar en adopción</a></div>
-          <div class="stats" id="stats"></div>
         </div>
         <div class="collage" id="collage">${collageTiles([])}</div>
       </section>
+      <section class="red" aria-labelledby="red-t"><div class="red-head"><h2 id="red-t">La red hoy</h2><span class="live">● en vivo</span></div>
+        <div class="red-grid" id="red">${RED.map(([k, label]) => `<div class="red-tile"><b>–</b><span>${label}</span></div>`).join("")}</div></section>
       <div class="filters">
         <div class="seg" role="group" aria-label="Especie">
           <button type="button" data-sp="" aria-pressed="${!filters.species}">Todos</button>
@@ -248,13 +249,22 @@ import { createClient } from "https://esm.sh/@neon/neon-js";
     const el = $("#collage");
     if (el && items.length) el.innerHTML = collageTiles(items);
   }
+  // [clave, texto, destino, color]
+  const RED = [
+    ["en_adopcion", "esperando casa", "esperando", "pink"], ["adoptados", "ya adoptados", "adoptados", "green"],
+    ["perdidos", "se buscan", "#/perdidos", "red"], ["encontrados", "encontrados", "#/perdidos", "teal"],
+    ["adoptantes", "adoptantes responsables", "#/adoptante", "violet"], ["refugios_rescatistas", "refugios y rescatistas", "#/refugios", "violet"],
+    ["transitos", "hogares de tránsito", "#/transitos", "violet"], ["personas", "personas en la red", "#/ingresar", "violet"],
+  ];
   async function loadStats() {
-    const [a, b] = await Promise.all([
-      sb.from("pets").select("id", { count: "exact", head: true }).neq("status", "adoptado"),
-      sb.from("pets").select("id", { count: "exact", head: true }).eq("status", "adoptado"),
-    ]);
-    const el = $("#stats"); if (!el) return;
-    el.innerHTML = `<button type="button" class="stat" data-show="esperando"><b>${a.count ?? 0}</b><span>esperando casa →</span></button><button type="button" class="stat" data-show="adoptados"><b>${b.count ?? 0}</b><span>ya adoptados →</span></button>`;
+    const { data } = await sb.rpc("network_stats");
+    const el = $("#red"); if (!el || !data) return;
+    const st = typeof data === "string" ? JSON.parse(data) : data;
+    el.innerHTML = RED.map(([k, label, to, c]) => {
+      const n = st[k] ?? 0;
+      const inner = `<b>${n}</b><span>${label}</span>`;
+      return to.startsWith("#") ? `<a class="red-tile c-${c}" href="${to}">${inner}</a>` : `<button type="button" class="red-tile c-${c}" data-show="${to}">${inner}</button>`;
+    }).join("");
     el.querySelectorAll("[data-show]").forEach((btn) => btn.addEventListener("click", async () => {
       const adopted = btn.dataset.show === "adoptados";
       filters.showAdopted = adopted; filters.onlyAdopted = adopted;
